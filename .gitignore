@@ -1,0 +1,21 @@
+# Cookies (contains auth tokens - NEVER commit)
+ameblo_cookies.json
+ameblo_cookies_base64.txt
+
+# Test files
+test_*.py
+debug_*.py
+test_images/
+
+# Screenshots
+*.png
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment
+.env
+
+# Uploaded images
+images/

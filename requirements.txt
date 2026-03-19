@@ -1,0 +1,6 @@
+selenium
+webdriver-manager
+requests
+gdown
+pytrends
+Pillow
