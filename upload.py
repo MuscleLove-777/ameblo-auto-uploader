@@ -255,7 +255,7 @@ def _list_via_gdown(folder_id):
         gdown.download_folder(url, output=dl_dir, quiet=False, remaining_ok=True)
     except Exception as e:
         print(f"Download error: {e}")
-        return []
+        # 一部ファイルが失敗しても、ダウンロード済みファイルを使う
 
     images = []
     for root, dirs, filenames in os.walk(dl_dir):
