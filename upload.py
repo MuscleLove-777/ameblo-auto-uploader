@@ -503,7 +503,13 @@ def post_blog_entry(driver, title, body_html, image_path, tags):
         title_input = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'input[placeholder*="タイトル"]'))
         )
-        title_input.send_keys(title)
+        # send_keysはBMP外の文字（絵文字）を扱えないためJavaScriptで入力
+        driver.execute_script(
+            "arguments[0].value = arguments[1];"
+            "arguments[0].dispatchEvent(new Event('input', {bubbles: true}));"
+            "arguments[0].dispatchEvent(new Event('change', {bubbles: true}));",
+            title_input, title
+        )
         human_delay(1, 2)
         print(f"タイトル入力: {title}")
 
