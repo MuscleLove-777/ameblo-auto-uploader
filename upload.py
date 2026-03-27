@@ -16,7 +16,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-from ameblo_auth import create_driver, navigate_to_editor, human_delay
+from ameblo_auth import create_driver, navigate_to_editor, human_delay, login_ameba
 
 COOKIE_FILE = os.path.join(os.path.dirname(__file__), "ameblo_cookies.json")
 
@@ -60,8 +60,28 @@ def login_with_cookies(driver):
     human_delay(3, 5)
 
     if "signin" in driver.current_url or "login" in driver.current_url:
-        print("Error: Cookieが期限切れです。save_cookies.py を再実行してください。")
-        return False
+        print("Warning: Cookieが期限切れです。パスワードログインを試行します...")
+        username = os.environ.get("AMEBLO_USERNAME", "")
+        password = os.environ.get("AMEBLO_PASSWORD", "")
+        if username and password:
+            try:
+                if login_ameba(driver, username, password):
+                    print("パスワードログイン成功! 新しいCookieを保存します...")
+                    # Save new cookies for future use
+                    new_cookies = driver.get_cookies()
+                    with open(COOKIE_FILE, "w") as f:
+                        json.dump(new_cookies, f, indent=2)
+                    return True
+                else:
+                    print("Error: パスワードログインも失敗しました。")
+                    return False
+            except Exception as e:
+                print(f"Error: パスワードログイン中にエラー: {e}")
+                return False
+        else:
+            print("Error: AMEBLO_USERNAME/AMEBLO_PASSWORD が設定されていません。")
+            print("save_cookies.py を再実行してください。")
+            return False
 
     print("Cookieログイン成功!")
     return True
@@ -629,10 +649,16 @@ def save_uploaded_log(log):
 # ===== メイン =====
 
 def main():
-    # 認証チェック（Cookie方式ではユーザー名/パスワード不要）
+    # 認証チェック（Cookie方式 + パスワードフォールバック）
     if not os.path.exists(COOKIE_FILE):
-        print("Error: Cookie未保存。先に save_cookies.py を実行してください。")
-        return 1
+        username = os.environ.get("AMEBLO_USERNAME", "")
+        password = os.environ.get("AMEBLO_PASSWORD", "")
+        if not username or not password:
+            print("Error: Cookie未保存かつ AMEBLO_USERNAME/AMEBLO_PASSWORD も未設定です。")
+            print("save_cookies.py を実行するか、環境変数を設定してください。")
+            return 1
+        else:
+            print("Cookie未保存ですが、パスワードログインで試行します...")
 
     if not GDRIVE_FOLDER_ID:
         print("Error: GDRIVE_FOLDER_ID_AMEBLO が未設定です")
@@ -727,10 +753,29 @@ def main():
         print("Chromeブラウザを起動中...")
         driver = create_driver(headless=True)
 
-        # Cookieログイン（reCAPTCHA回避）
-        if not login_with_cookies(driver):
-            print("Cookieログイン失敗! save_cookies.py を再実行してください。")
-            return 1
+        # Cookieログイン（reCAPTCHA回避）+ パスワードフォールバック
+        login_success = False
+        if os.path.exists(COOKIE_FILE):
+            login_success = login_with_cookies(driver)
+        else:
+            print("Cookie未保存。パスワードログインを直接試行します...")
+
+        if not login_success:
+            # パスワードログインを試行
+            username = os.environ.get("AMEBLO_USERNAME", "")
+            password = os.environ.get("AMEBLO_PASSWORD", "")
+            if username and password:
+                print("パスワードログインを試行中...")
+                if login_ameba(driver, username, password):
+                    print("パスワードログイン成功! 新しいCookieを保存します...")
+                    new_cookies = driver.get_cookies()
+                    with open(COOKIE_FILE, "w") as f:
+                        json.dump(new_cookies, f, indent=2)
+                    login_success = True
+
+            if not login_success:
+                print("ログイン失敗! AMEBLO_USERNAME/AMEBLO_PASSWORD を確認してください。")
+                return 1
 
         human_delay(2, 4)
 

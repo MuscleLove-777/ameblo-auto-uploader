@@ -18,6 +18,8 @@ jobs:
     env:
       GDRIVE_FOLDER_ID_AMEBLO: ${{ secrets.GDRIVE_FOLDER_ID_AMEBLO }}
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      AMEBLO_USERNAME: ${{ secrets.AMEBLO_USERNAME }}
+      AMEBLO_PASSWORD: ${{ secrets.AMEBLO_PASSWORD }}
 
     steps:
       - name: Checkout repository
