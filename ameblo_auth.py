@@ -243,7 +243,7 @@ def login_ameba(driver, username=None, password=None):
         # ログイン成功の判定
         if any(keyword in current_url for keyword in ["home", "mypage", "dashboard", "ameba.jp/"]):
             # ログインページにリダイレクトされていないか確認
-            if "login" not in current_url.lower():
+            if "login" not in current_url.lower() and "signin" not in current_url.lower() and "auth.user.ameba" not in current_url.lower():
                 print("ログイン成功!")
                 return True
 
@@ -334,20 +334,25 @@ def navigate_to_editor(driver):
                     print(f"  再ログイン失敗: {e}")
                     continue
 
+            # まだログインページにいる場合はスキップ
+            current_url = driver.current_url
+            if "signin" in current_url or "login" in current_url.lower() or "auth.user.ameba" in current_url:
+                print(f"  ログインページから抜け出せません: {current_url}")
+                continue
+
             # エディタページが表示されたか確認
             page_source = driver.page_source
             if any(keyword in page_source for keyword in [
-                "entry_title", "entryTitle", "タイトル",
-                "entry_body", "entryBody", "本文",
-                "editor", "cke_editor", "entry/new",
+                "entry_title", "entryTitle",
+                "entry_body", "entryBody",
+                "cke_editor", "entry/new",
                 "EntryEditor", "blog-entry", "ブログを書く",
-                "textarea", "contenteditable",
             ]):
                 print(f"エディタページ到達: {current_url}")
                 return True
 
             # URLにentry/newが含まれていればエディタ
-            if "entry" in current_url:
+            if "entry" in current_url and "blog.ameba.jp" in current_url:
                 print(f"エディタページ到達（URL判定）: {current_url}")
                 return True
 
