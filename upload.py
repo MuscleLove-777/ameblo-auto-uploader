@@ -59,15 +59,19 @@ def login_with_cookies(driver):
     driver.get("https://blog.ameba.jp/ucs/top.do")
     human_delay(3, 5)
 
-    if "signin" in driver.current_url or "login" in driver.current_url:
+    if "signin" in driver.current_url or "login" in driver.current_url or "auth.user.ameba" in driver.current_url:
         print("Warning: Cookieが期限切れです。パスワードログインを試行します...")
         username = os.environ.get("AMEBLO_USERNAME", "")
         password = os.environ.get("AMEBLO_PASSWORD", "")
         if username and password:
             try:
                 if login_ameba(driver, username, password):
+                    # ログイン成功後、まだ認証ページにいないことを再確認
+                    current = driver.current_url
+                    if "signin" in current or "auth.user.ameba" in current:
+                        print("Error: login_ameba成功判定だがまだ認証ページ上。ログイン失敗。")
+                        return False
                     print("パスワードログイン成功! 新しいCookieを保存します...")
-                    # Save new cookies for future use
                     new_cookies = driver.get_cookies()
                     with open(COOKIE_FILE, "w") as f:
                         json.dump(new_cookies, f, indent=2)

@@ -234,20 +234,59 @@ def login_ameba(driver, username=None, password=None):
             return False
 
         submit_btn.click()
-        human_delay(4, 7)
 
-        # ログイン成功を確認
-        current_url = driver.current_url
+        # ログイン後のリダイレクト完了を待つ（URLがsigninから変わるまで最大30秒）
+        pre_url = driver.current_url
+        for _ in range(15):
+            time.sleep(2)
+            current_url = driver.current_url
+            if current_url != pre_url and "signin" not in current_url and "login" not in current_url.lower():
+                break
+        else:
+            # タイムアウト - まだログインページにいる場合
+            current_url = driver.current_url
+
         print(f"ログイン後URL: {current_url}")
+
+        # まだログインページ/認証ページにいる場合は失敗
+        if "signin" in current_url or "login" in current_url.lower() or "auth.user.ameba" in current_url:
+            # 同意ボタンやCAPTCHAチェック
+            try:
+                page_source = driver.page_source
+                # 同意・許可ボタンがあればクリック
+                for btn in driver.find_elements(By.CSS_SELECTOR, "button, a, input[type='submit']"):
+                    btn_text = (btn.text or "").strip()
+                    btn_val = (btn.get_attribute("value") or "").strip()
+                    combined = btn_text + btn_val
+                    if any(kw in combined for kw in ["許可", "同意", "Allow", "Accept", "続行", "次へ", "確認"]):
+                        if btn.is_displayed() and btn.is_enabled():
+                            print(f"  同意/確認ボタン検出: '{combined}' → クリック")
+                            btn.click()
+                            human_delay(5, 8)
+                            current_url = driver.current_url
+                            print(f"  クリック後URL: {current_url}")
+                            break
+            except Exception as e:
+                print(f"  同意ボタン探索エラー: {e}")
+
+        # 最終判定: まだ認証ページにいたら失敗
+        current_url = driver.current_url
+        if "signin" in current_url or "auth.user.ameba" in current_url:
+            print(f"Error: ログインページから抜け出せません: {current_url}")
+            # デバッグ用: ページタイトルとCookieをダンプ
+            print(f"  Page title: {driver.title}")
+            cookies = driver.get_cookies()
+            cookie_names = [c["name"] for c in cookies]
+            print(f"  Cookies ({len(cookies)}): {cookie_names[:10]}")
+            return False
 
         # ログイン成功の判定
         if any(keyword in current_url for keyword in ["home", "mypage", "dashboard", "ameba.jp/"]):
-            # ログインページにリダイレクトされていないか確認
-            if "login" not in current_url.lower() and "signin" not in current_url.lower() and "auth.user.ameba" not in current_url.lower():
+            if "login" not in current_url.lower():
                 print("ログイン成功!")
                 return True
 
-        # Cookie確認でもログイン判定
+        # Cookie確認（ただしログインページでないことが前提）
         cookies = driver.get_cookies()
         session_cookies = [c for c in cookies if any(
             name in c["name"].lower() for name in ["session", "token", "auth", "login"]
@@ -327,7 +366,13 @@ def navigate_to_editor(driver):
 
                     submit = driver.find_element(By.CSS_SELECTOR, 'button[type="submit"]')
                     submit.click()
-                    human_delay(5, 8)
+                    # リダイレクト完了を待つ
+                    pre_url = driver.current_url
+                    for _ in range(15):
+                        time.sleep(2)
+                        current_url = driver.current_url
+                        if current_url != pre_url and "signin" not in current_url and "login" not in current_url.lower():
+                            break
                     current_url = driver.current_url
                     print(f"  再ログイン後URL: {current_url}")
                 except Exception as e:
