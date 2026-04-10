@@ -233,7 +233,72 @@ def login_ameba(driver, username=None, password=None):
             print("Error: ログインボタンが見つかりません")
             return False
 
-        submit_btn.click()
+        # reCAPTCHA v3トークン生成（invisible reCAPTCHA対応）
+        try:
+            recaptcha_field = driver.find_elements(By.CSS_SELECTOR, 'input[name="reCaptchaToken"]')
+            if recaptcha_field:
+                print("  reCAPTCHA検出 - トークン生成を試行...")
+                # サイトキーを取得（grecaptchaスクリプトまたはdata-sitekeyから）
+                token = driver.execute_script("""
+                    // 方法1: grecaptcha.execute() で直接トークン取得
+                    if (typeof grecaptcha !== 'undefined' && grecaptcha.execute) {
+                        // サイトキーを探す
+                        var siteKey = null;
+                        // data-sitekey属性から取得
+                        var el = document.querySelector('[data-sitekey]');
+                        if (el) siteKey = el.getAttribute('data-sitekey');
+                        // scriptのsrc URLから取得
+                        if (!siteKey) {
+                            var scripts = document.querySelectorAll('script[src*="recaptcha"]');
+                            for (var s of scripts) {
+                                var m = s.src.match(/render=([^&]+)/);
+                                if (m) { siteKey = m[1]; break; }
+                            }
+                        }
+                        if (siteKey && siteKey !== 'explicit') {
+                            try {
+                                return new Promise(function(resolve) {
+                                    grecaptcha.ready(function() {
+                                        grecaptcha.execute(siteKey, {action: 'login'}).then(function(token) {
+                                            resolve(token);
+                                        });
+                                    });
+                                });
+                            } catch(e) { return 'error:' + e.message; }
+                        }
+                        return 'no_sitekey';
+                    }
+                    return 'no_grecaptcha';
+                """)
+                if token and not str(token).startswith(('no_', 'error:')):
+                    driver.execute_script(
+                        "document.querySelector('input[name=\"reCaptchaToken\"]').value = arguments[0];",
+                        token
+                    )
+                    print(f"  reCAPTCHAトークン設定完了 (len={len(str(token))})")
+                else:
+                    print(f"  reCAPTCHAトークン取得失敗: {token}")
+                    # フォームのsubmitイベント経由でトークンが自動設定される場合もあるため続行
+        except Exception as e:
+            print(f"  reCAPTCHA処理エラー: {e}")
+
+        # ボタンクリックの代わりにJS経由でフォームsubmit（reCAPTCHAのonsubmitハンドラ発火のため）
+        try:
+            js_submitted = driver.execute_script("""
+                var form = document.querySelector('form');
+                if (form) {
+                    // submitイベントを発火させてからsubmit
+                    var event = new Event('submit', {bubbles: true, cancelable: true});
+                    var cancelled = !form.dispatchEvent(event);
+                    if (!cancelled) form.submit();
+                    return 'form_submit';
+                }
+                return 'no_form';
+            """)
+            print(f"  フォームsubmit: {js_submitted}")
+        except Exception:
+            # フォールバック: 通常のボタンクリック
+            submit_btn.click()
 
         # ログイン後のリダイレクト完了を待つ（URLがsigninから変わるまで最大30秒）
         pre_url = driver.current_url
