@@ -302,12 +302,27 @@ def _list_via_gdown(folder_id):
     dl_dir = "images"
     os.makedirs(dl_dir, exist_ok=True)
     url = f"https://drive.google.com/drive/folders/{folder_id}"
+
+    # ダウンロード前の既存ファイル数を記録
+    before = set()
+    for root, dirs, filenames in os.walk(dl_dir):
+        for fname in filenames:
+            before.add(os.path.join(root, fname))
     print(f"Downloading from Google Drive: {url}")
+    print(f"  Files already in '{dl_dir}/': {len(before)}")
+
     try:
         gdown.download_folder(url, output=dl_dir, quiet=False, remaining_ok=True)
     except Exception as e:
-        print(f"Download error: {e}")
-        # 一部ファイルが失敗しても、ダウンロード済みファイルを使う
+        print(f"Download error (partial download may exist): {e}")
+
+    # ダウンロード後のファイル数を集計
+    after = set()
+    for root, dirs, filenames in os.walk(dl_dir):
+        for fname in filenames:
+            after.add(os.path.join(root, fname))
+    new_files = len(after - before)
+    print(f"  Files after download: {len(after)} (newly downloaded: {new_files})")
 
     images = []
     for root, dirs, filenames in os.walk(dl_dir):

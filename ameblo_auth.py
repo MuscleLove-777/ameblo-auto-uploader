@@ -250,21 +250,36 @@ def login_ameba(driver, username=None, password=None):
 
         # まだログインページ/認証ページにいる場合は失敗
         if "signin" in current_url or "login" in current_url.lower() or "auth.user.ameba" in current_url:
-            # 同意ボタンやCAPTCHAチェック
+            # CAPTCHA検出
             try:
                 page_source = driver.page_source
-                # 同意・許可ボタンがあればクリック
+                if any(kw in page_source.lower() for kw in ["recaptcha", "hcaptcha", "g-recaptcha", "h-captcha", "captcha"]):
+                    print("Warning: CAPTCHAが検出されました。手動ログインしてCookieを更新してください。")
+            except Exception:
+                pass
+
+            # 同意ボタンやCAPTCHAチェック（「確認」は除外 - Cookie同意バナーの誤クリック防止）
+            try:
                 for btn in driver.find_elements(By.CSS_SELECTOR, "button, a, input[type='submit']"):
                     btn_text = (btn.text or "").strip()
                     btn_val = (btn.get_attribute("value") or "").strip()
                     combined = btn_text + btn_val
-                    if any(kw in combined for kw in ["許可", "同意", "Allow", "Accept", "続行", "次へ", "確認"]):
+                    if any(kw in combined for kw in ["許可", "同意", "Allow", "Accept", "続行", "次へ"]):
                         if btn.is_displayed() and btn.is_enabled():
-                            print(f"  同意/確認ボタン検出: '{combined}' → クリック")
+                            print(f"  同意ボタン検出: '{combined}' → クリック")
                             btn.click()
                             human_delay(5, 8)
                             current_url = driver.current_url
                             print(f"  クリック後URL: {current_url}")
+                            # クリック後にsigninから抜けたかチェック
+                            if "signin" not in current_url and "login" not in current_url.lower() and "auth.user.ameba" not in current_url:
+                                # リダイレクト先が無関係なページでないかチェック
+                                if any(bad in current_url for bad in ["/staff/", "/entry-"]):
+                                    print(f"  Warning: 無関係なページにリダイレクトされました: {current_url}")
+                                    print("  ログイン失敗と判定します")
+                                    # ログインページに戻す試行はしない（無限ループ防止）
+                                else:
+                                    print(f"  signinページから抜けました")
                             break
             except Exception as e:
                 print(f"  同意ボタン探索エラー: {e}")
@@ -273,16 +288,22 @@ def login_ameba(driver, username=None, password=None):
         current_url = driver.current_url
         if "signin" in current_url or "auth.user.ameba" in current_url:
             print(f"Error: ログインページから抜け出せません: {current_url}")
-            # デバッグ用: ページタイトルとCookieをダンプ
-            print(f"  Page title: {driver.title}")
-            cookies = driver.get_cookies()
-            cookie_names = [c["name"] for c in cookies]
-            print(f"  Cookies ({len(cookies)}): {cookie_names[:10]}")
+            # デバッグ情報強化
+            _dump_debug_info(driver)
             return False
 
-        # ログイン成功の判定
-        if any(keyword in current_url for keyword in ["home", "mypage", "dashboard", "ameba.jp/"]):
-            if "login" not in current_url.lower():
+        # 無関係なページへのリダイレクト検出
+        if any(bad in current_url for bad in ["/staff/", "/entry-"]):
+            print(f"Error: 無関係なページにリダイレクトされました: {current_url}")
+            _dump_debug_info(driver)
+            return False
+
+        # ログイン成功の判定（厳密化）
+        SUCCESS_PATTERNS = ["blog.ameba.jp/ucs", "ameba.jp/home", "ameba.jp/mypage", "blog.ameba.jp/"]
+        FAILURE_PATTERNS = ["/staff/", "/entry-", "signin", "login", "auth.user.ameba"]
+
+        if any(pat in current_url for pat in SUCCESS_PATTERNS):
+            if not any(bad in current_url for bad in FAILURE_PATTERNS):
                 print("ログイン成功!")
                 return True
 
@@ -306,11 +327,58 @@ def login_ameba(driver, username=None, password=None):
 
         print("Warning: ログイン状態が確認できません")
         print(f"URL: {current_url}")
+        _dump_debug_info(driver)
         return False
 
     except Exception as e:
         print(f"ログインエラー: {e}")
         return False
+
+
+def _dump_debug_info(driver):
+    """ログイン失敗時のデバッグ情報をダンプする"""
+    try:
+        print(f"  [Debug] Page title: {driver.title}")
+        print(f"  [Debug] Current URL: {driver.current_url}")
+
+        # Cookies
+        cookies = driver.get_cookies()
+        cookie_names = [c["name"] for c in cookies]
+        print(f"  [Debug] Cookies ({len(cookies)}): {cookie_names[:10]}")
+
+        # input要素一覧
+        inputs = driver.find_elements(By.TAG_NAME, "input")
+        print(f"  [Debug] Input elements ({len(inputs)}):")
+        for inp in inputs[:15]:
+            inp_type = inp.get_attribute("type") or ""
+            inp_name = inp.get_attribute("name") or ""
+            inp_id = inp.get_attribute("id") or ""
+            visible = inp.is_displayed()
+            print(f"    type={inp_type}, name={inp_name}, id={inp_id}, visible={visible}")
+
+        # button要素一覧
+        buttons = driver.find_elements(By.TAG_NAME, "button")
+        print(f"  [Debug] Button elements ({len(buttons)}):")
+        for btn in buttons[:10]:
+            btn_text = (btn.text or "").strip()[:50]
+            visible = btn.is_displayed()
+            print(f"    text='{btn_text}', visible={visible}")
+
+        # CAPTCHA検出
+        page_source = driver.page_source
+        if any(kw in page_source.lower() for kw in ["recaptcha", "hcaptcha", "g-recaptcha", "h-captcha", "captcha"]):
+            print("  [Debug] CAPTCHA detected in page source!")
+
+        # スクリーンショット保存
+        try:
+            screenshot_path = "login_debug.png"
+            driver.save_screenshot(screenshot_path)
+            print(f"  [Debug] Screenshot saved: {screenshot_path}")
+        except Exception as ss_err:
+            print(f"  [Debug] Screenshot failed: {ss_err}")
+
+    except Exception as e:
+        print(f"  [Debug] Debug dump error: {e}")
 
 
 def navigate_to_editor(driver):
