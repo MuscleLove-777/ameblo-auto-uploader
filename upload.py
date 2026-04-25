@@ -96,9 +96,35 @@ JST = timezone(timedelta(hours=9))
 GDRIVE_FOLDER_ID = os.environ.get("GDRIVE_FOLDER_ID_AMEBLO", "")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 
-PATREON_LINK = "https://www.patreon.com/cw/MuscleLove"
+PATREON_LINK = "https://www.patreon.com/cw/MuscleLove?utm_source=ameblo"
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
 UPLOADED_LOG = "uploaded_ameblo.json"
+
+# --- MuscleLove バックリンクプール（フィットネス系のみ。ameblo規約配慮でアダルト系は除外） ---
+ML_BACKLINK_POOL_FITNESS = [
+    ("https://musclelove-777.github.io/muscle-meal-girls/", "筋肉女子のマッスルメシ"),
+    ("https://musclelove-777.github.io/runners-lab/", "ランナーラボ"),
+    ("https://musclelove-777.github.io/armwrestling-girls-navi/", "腕相撲女子ナビ"),
+    ("https://musclelove-777.github.io/physique-girls-navi/", "フィジーク女子ナビ"),
+    ("https://musclelove-777.github.io/fighting-girls-navi/", "格闘技女子ナビ"),
+    ("https://musclelove-777.github.io/joshi-prowrestling-navi/", "女子プロレスナビ"),
+    ("https://musclelove-777.github.io/female-physique-queens/", "Female Physique Queens"),
+    ("https://musclelove-777.github.io/network/fitness/", "全Fitness Network 15サイト一覧"),
+    ("https://musclelove-777.github.io/network/academy/", "MuscleLove Academy 77サイト"),
+]
+
+
+def build_backlink_block():
+    """MuscleLoveフィットネス系サイトへのバックリンクHTMLブロックを生成（ランダム3件）"""
+    k = min(3, len(ML_BACKLINK_POOL_FITNESS))
+    selected = random.sample(ML_BACKLINK_POOL_FITNESS, k=k)
+    items = " | ".join([f'<a href="{u}" target="_blank" rel="noopener">{n}</a>' for u, n in selected])
+    return (
+        "\n<br/><br/>\n"
+        "<!-- ML_BACKLINK -->\n"
+        f'<small style="color:#888;">💡 関連サイト：{items}</small>\n'
+        "<!-- /ML_BACKLINK -->\n"
+    )
 
 # --- タグマッピング ---
 CONTENT_TAG_MAP = {
@@ -402,6 +428,8 @@ def build_body_html(image_name, image_url, tags):
         hashtags=hashtags,
         patreon_link=PATREON_LINK,
     )
+    # MuscleLove バックリンクブロックを末尾に付加（冪等マーカー付き）
+    html = html.rstrip() + build_backlink_block()
     return html.strip()
 
 
