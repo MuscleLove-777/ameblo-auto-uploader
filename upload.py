@@ -614,26 +614,48 @@ def post_blog_entry(driver, title, body_html, image_path, tags):
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(1)
 
-        publish_clicked = False
-        for btn in driver.find_elements(By.CSS_SELECTOR, "button, input[type='submit']"):
-            text = (btn.text or "").strip()
-            if "投稿する" in text and btn.is_displayed():
-                btn.click()
-                print(f"  ボタン: '{text}'")
-                publish_clicked = True
-                break
+        from selenium.common.exceptions import StaleElementReferenceException
 
-        if not publish_clicked:
-            # フォールバック: より広い範囲でボタンを探す
-            buttons = driver.find_elements(By.CSS_SELECTOR, "button, input[type='submit'], input[type='button']")
-            for btn in buttons:
-                text = (btn.text or "").strip() or (btn.get_attribute("value") or "")
-                if any(keyword in text for keyword in ["公開", "投稿", "publish"]):
-                    if btn.is_displayed() and btn.is_enabled():
-                        btn.click()
-                        print(f"  ボタン（フォールバック）: '{text}'")
-                        publish_clicked = True
-                        break
+        def _click_publish_button(max_attempts=3):
+            keywords_primary = ["投稿する"]
+            keywords_fallback = ["公開", "投稿", "publish"]
+            for attempt in range(max_attempts):
+                try:
+                    btns = driver.find_elements(By.CSS_SELECTOR, "button, input[type='submit'], input[type='button']")
+                    for btn in btns:
+                        try:
+                            text = (btn.text or "").strip() or (btn.get_attribute("value") or "")
+                        except StaleElementReferenceException:
+                            continue
+                        if any(k in text for k in keywords_primary):
+                            try:
+                                if btn.is_displayed():
+                                    btn.click()
+                                    print(f"  ボタン: '{text}'")
+                                    return True
+                            except StaleElementReferenceException:
+                                break
+                    for btn in btns:
+                        try:
+                            text = (btn.text or "").strip() or (btn.get_attribute("value") or "")
+                        except StaleElementReferenceException:
+                            continue
+                        if any(k in text for k in keywords_fallback):
+                            try:
+                                if btn.is_displayed() and btn.is_enabled():
+                                    btn.click()
+                                    print(f"  ボタン（フォールバック）: '{text}'")
+                                    return True
+                            except StaleElementReferenceException:
+                                break
+                except StaleElementReferenceException:
+                    pass
+                if attempt < max_attempts - 1:
+                    print(f"  StaleElement再試行 ({attempt + 1}/{max_attempts})...")
+                    time.sleep(1)
+            return False
+
+        publish_clicked = _click_publish_button()
 
         if not publish_clicked:
             print("Error: 投稿ボタンが見つかりません")
@@ -644,11 +666,14 @@ def post_blog_entry(driver, title, body_html, image_path, tags):
         # --- 5. 「カバーなしで投稿する」ダイアログ対応 ---
         try:
             for btn in driver.find_elements(By.CSS_SELECTOR, "button, a"):
-                if "カバーなしで投稿" in (btn.text or ""):
-                    btn.click()
-                    print("  「カバーなしで投稿する」をクリック")
-                    time.sleep(8)
-                    break
+                try:
+                    if "カバーなしで投稿" in (btn.text or ""):
+                        btn.click()
+                        print("  「カバーなしで投稿する」をクリック")
+                        time.sleep(8)
+                        break
+                except StaleElementReferenceException:
+                    pass
         except Exception:
             pass
 
