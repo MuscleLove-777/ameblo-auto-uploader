@@ -96,7 +96,7 @@ JST = timezone(timedelta(hours=9))
 GDRIVE_FOLDER_ID = os.environ.get("GDRIVE_FOLDER_ID_AMEBLO", "")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 
-PATREON_LINK = "https://www.patreon.com/cw/MuscleLove?utm_source=ameblo"
+PATREON_LINK = "https://www.patreon.com/c/MuscleLove?utm_source=ameblo"
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
 UPLOADED_LOG = "uploaded_ameblo.json"
 
