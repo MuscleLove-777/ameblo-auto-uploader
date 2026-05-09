@@ -8,6 +8,7 @@ import sys
 import json
 import os
 import random
+import re
 import time
 from datetime import datetime, timezone, timedelta
 
@@ -149,46 +150,94 @@ BASE_TAGS = [
     '筋肉女子', '筋トレ女子', 'マッスルガール', 'フィットネス',
     'ボディメイク', 'ワークアウト', 'ジム', 'トレーニング',
     'ワキフェチ', '腕フェチ', '筋肉美', 'AI美女',
-    'むちむち', '褐色美女',
+    'むちむち',
 ]
+
+TAN_KEYWORDS = {
+    'tan', 'tanned', 'darktan', 'dark-tan', 'brown', 'bronze',
+    '褐色', '小麦肌', '日焼け', '黒ギャル',
+}
+
+GLOSSY_KEYWORDS = {
+    'sweat', 'sweaty', 'wet', 'glossy', 'oil', 'oiled',
+    '汗', 'テカテカ', 'オイル',
+}
+
+ABS_KEYWORDS = {
+    'abs', 'ab', 'sixpack', 'six-pack', '腹筋',
+}
+
+ARMPIT_KEYWORDS = {
+    'waki', 'armpit', 'underarm', 'ワキ', '脇',
+}
+
+
+def _normalized_name(image_name):
+    stem = os.path.splitext(os.path.basename(image_name))[0].lower()
+    return re.sub(r'[\s_\-()（）\[\]【】]+', ' ', stem)
+
+
+def _name_has_any(name_lower, keywords):
+    tokens = set(name_lower.split())
+    compact_name = name_lower.replace(" ", "")
+    for keyword in keywords:
+        key = keyword.lower().replace("_", " ").strip()
+        compact_key = key.replace(" ", "").replace("-", "")
+        if key in tokens or compact_key in tokens:
+            return True
+        # tan/ab など短い英字は誤爆しやすいので、単語一致だけにする。
+        if re.search(r'[a-z]', key) and len(compact_key) <= 3:
+            continue
+        if key in name_lower or compact_key in compact_name:
+            return True
+    return False
+
+
+def detect_image_traits(image_name):
+    """ファイル名から言及してよい属性を保守的に判定する。"""
+    name_lower = _normalized_name(image_name)
+    return {
+        "tan": _name_has_any(name_lower, TAN_KEYWORDS),
+        "glossy": _name_has_any(name_lower, GLOSSY_KEYWORDS),
+        "abs": _name_has_any(name_lower, ABS_KEYWORDS),
+        "armpit": _name_has_any(name_lower, ARMPIT_KEYWORDS),
+    }
 
 # ブログタイトルテンプレート（ランダム選択）
 TITLE_TEMPLATES = [
-    # 凛花（ギャル・ドS）「ウチ」褐色テカテカ腹筋バキバキ巨乳
-    "💪 はぁ？ウチの{category}見たいわけ？笑 | 凛花",
-    "🔥 凛花の{category}、まじバキバキすぎて語彙力ゼロになった",
-    "✨ しょーがないなぁ、特別に見せてあげる♡ 凛花の{category}",
-    "💪 「硬いよ？覚悟しな♡」凛花の{category}でKOされた人続出",
-    # カイ（ボーイッシュ）「ウチ」小麦肌アスリートお尻プリッ
-    "🔥 よっ！カイの{category}、まじやばくない？",
-    "✨ カイの{category} — 腕立て500回の成果がこれ",
-    "💪 「照れるじゃん笑」カイの{category}、ウチ的には限界っしょ",
-    "🔥 小麦肌×アスリート×{category}。カイの仕上がりが神すぎる",
-    # ましろ（天然）「あたし」色白もちもち汗っかきおっぱい大きめ
-    "✨ えへへ〜ましろの{category}見てく？♡",
-    "💪 ましろの{category}、もちもちなのにバキバキな件",
-    "🔥 「えっまじ！？うれし〜♡ もっと言って！」ましろの{category}を褒めよう",
-    "♡ ましろの汗テカテカ{category}、オイル塗ったみたいじゃん笑",
-    # 紫苑（お姉さん系）「あたし」長身グラマラス褐色爆乳フェロモン
-    "💪 あ〜ら♡ 紫苑の{category}、興味あるんだ？かわい〜",
-    "🔥 「触ったら戻れないかもよ？笑」紫苑の{category}が全開",
-    "✨ 紫苑の{category}、汗でフェロモンやばすぎる件",
-    "♡ 「そんな見つめられたら…ドキドキしちゃうじゃん♡」紫苑の{category}",
-    # アヤネ（ツンデレ）「あたし」コンパクトむちむちツインテール色白
-    "💪 な、なに見てんの！アヤネの{category}…見ていいけど",
-    "🔥 「3秒だけだからね！ちゃんと見なさいよ」アヤネの{category}",
-    "✨ ふ〜ん…褒めてくれるなら悪い気しないけどさ。アヤネの{category}",
-    "♡ アヤネの{category} — ツンデレが最終的に全部見せてくれる件",
+    "✨ しょーがないなぁ、特別に見せてあげる♡ 今日の{category}",
+    "💪 今日の{category}、ポージングの存在感が強い",
+    "🔥 視線とシルエットで魅せる{category} | MuscleLove",
+    "♡ {category} — かわいさと強さのバランスが良すぎる",
+    "✨ ふ〜ん…この{category}、ちょっと見入っちゃうでしょ",
+    "💪 MuscleLove本日の一枚：{category}",
 ]
+
+CONDITIONAL_TITLE_TEMPLATES = {
+    "tan": [
+        "🔥 小麦肌が映える{category}。この存在感、強い",
+        "💪 褐色ボディラインで魅せる{category}",
+    ],
+    "glossy": [
+        "✨ 汗のツヤまで映える{category}",
+        "🔥 光を拾う{category}、仕上がりが強い",
+    ],
+    "abs": [
+        "💪 腹筋ラインが主役の{category}",
+        "🔥 鍛えた腹筋で魅せる{category}",
+    ],
+    "armpit": [
+        "♡ ワキ見せポージングの{category}",
+        "💪 腕上げラインがきれいな{category}",
+    ],
+}
 
 # ブログ本文HTMLテンプレート（ランダム選択）
 BODY_TEMPLATES = [
     """
 <div style="text-align: center; margin: 20px 0;">
 <p style="font-size: 18px; font-weight: bold; color: #333;">{title}</p>
-<br/>
-<img src="{image_url}" alt="{category}" style="max-width: 100%; height: auto; border-radius: 8px;" />
-<br/><br/>
+{image_html}
 <p style="font-size: 14px; color: #555; line-height: 1.8;">
 {caption}
 </p>
@@ -214,9 +263,7 @@ Patreonで限定コンテンツ配信中!
     """
 <div style="text-align: center; margin: 20px 0;">
 <h3 style="color: #2c3e50;">{title}</h3>
-<br/>
-<img src="{image_url}" alt="{category}" style="max-width: 100%; height: auto; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
-<br/><br/>
+{image_html}
 <p style="font-size: 14px; color: #555; line-height: 1.8;">
 {caption}
 </p>
@@ -242,9 +289,7 @@ MuscleLove Patreon
 <p style="font-size: 20px; font-weight: bold; color: #2c3e50; border-bottom: 3px solid #e74c3c; display: inline-block; padding-bottom: 5px;">
 {title}
 </p>
-<br/><br/>
-<img src="{image_url}" alt="{category}" style="max-width: 100%; height: auto; border-radius: 8px;" />
-<br/><br/>
+{image_html}
 <p style="font-size: 14px; color: #555; line-height: 1.8;">
 {caption}
 </p>
@@ -271,32 +316,32 @@ More exclusive content on Patreon
 
 # キャプションテンプレート
 CAPTION_TEMPLATES = [
-    # 凛花（ギャル・ドS）
-    "💪 「はぁ？ウチの身体そんな見たいわけ？笑　しょーがないなぁ、特別ね♡」— 今日の凛花の腹筋、ガチでバキバキすぎる",
-    "🔥 凛花の褐色テカテカボディ。腹筋バキバキなのにむちむちっていう矛盾が最高すぎる♡",
-    "✨ 「いーけど、硬いよ？覚悟しな♡」← 凛花のこのセリフで毎回KOされる件",
-    "💪 「めっちゃ汗かいたわ〜ワキとかやばくない？笑」今日の凛花も破壊力満点",
-    # カイ（ボーイッシュ）
-    "🔥 「よっ！今日もジム行ってきた〜！てかこの腕見てよまじやばくない？」カイの小麦肌が本日も神",
-    "✨ 「ワキ？笑　別にいーけどさぁ〜汗くさくね？あはは！」カラッとしてるカイが最高すぎる",
-    "💪 ボーイッシュなのにお尻プリッ、肩幅しっかり。カイのこのバランス、反則じゃない？",
-    "🔥 「照れるじゃん笑」って言いながら全然隠さないカイ、最高",
-    # ましろ（天然）
-    "✨ 「えへへ〜今日もめっちゃトレーニングしたぁ！あたしがんばった〜♡」ましろのもちもち筋肉が今日も最高",
-    "💪 「えっまじ！？うれし〜！♡ もっと言って言って〜！」褒めると喜ぶましろを無限に褒めたい",
-    "🔥 「なんかさぁ〜めっちゃ身体テカテカしてない？オイル塗ったみたいじゃん笑」ましろの汗テカ現象、神",
-    "♡ 色白もちもち＋腹筋うっすら＋おっぱい大きめ。ましろの体型の神バランス",
-    # 紫苑（お姉さん系）
-    "💪 「あ〜ら♡ あたしの身体に興味あるんだ？かわい〜♡」紫苑の長身グラマラスボディ今日も全開",
-    "🔥 「触ったらもう戻れないかもよ？笑」大胸筋×爆乳の紫苑。この組み合わせは反則すぎる",
-    "✨ 「全身びっしょりなんだけど♡ えっちくない？笑」紫苑の汗フェロモンでKOされた",
-    "♡ 「そんな見つめられたら〜…あたしもドキドキしちゃうじゃん♡」紫苑のこの余裕、惚れる",
-    # アヤネ（ツンデレ）
-    "💪 「な、なに見てんの！…見るなとは言ってないけど！笑」アヤネのコンパクトむちむち筋肉が本日も破壊",
-    "🔥 「3秒だけだからね！…ちゃんと触りなさいよ」← アヤネさん、ちゃんと見ていいって言ってくれてますよ？",
-    "✨ 「ふ〜ん…そ、そう？…もっと言いなよ（小声）」赤くなるアヤネのツインテールがかわいすぎる",
-    "♡ 「うわ〜やば〜汗めっちゃ…やだ見ないでよぉ…いや別に見ていいけど！」アヤネのノリ最高",
+    "💪 今日の一枚、ポージングとシルエットの説得力がいい。強さとかわいさのバランスが刺さる♡",
+    "✨ 画面越しでも存在感が伝わるショット。表情とボディラインの見せ方がうまいんだよね。",
+    "🔥 余裕ある雰囲気なのに、フィットネス感もしっかりある。このバランスがMuscleLoveっぽい。",
+    "♡ 派手に言いすぎなくても伝わるタイプの一枚。ポーズ、表情、全体のラインがきれい。",
+    "💪 しょーがないなぁ、今日はこの一枚。見れば見るほどボディメイクの魅力が出てくるやつ。",
+    "✨ 筋肉美女らしい存在感と、やわらかい雰囲気が同居してる。今日の投稿にちょうどいい仕上がり♡",
 ]
+
+CONDITIONAL_CAPTION_TEMPLATES = {
+    "tan": [
+        "🔥 小麦肌のトーンが全体の雰囲気を引き締めていて、ポージングの強さがさらに映えてる♡",
+        "💪 褐色のボディラインが光を拾って、フィットネスアートとしての存在感がかなり強い。",
+    ],
+    "glossy": [
+        "✨ 汗のツヤ感まで含めて、トレーニング後っぽい空気が出てる。こういう質感、いいよね。",
+        "🔥 光の入り方でボディラインがきれいに見える一枚。仕上がりの臨場感がある。",
+    ],
+    "abs": [
+        "💪 腹筋ラインがちゃんと主役になってる。鍛えてきた説得力が画面から伝わるやつ。",
+        "🔥 腹筋まわりの引き締まり方がいい。強さと色気のバランスが絶妙。",
+    ],
+    "armpit": [
+        "♡ 腕上げポーズのラインがきれい。ワキから肩にかけての見せ方がかなり刺さる。",
+        "💪 ワキ見せの構図が自然で、肩まわりのフィットネス感もしっかり出てる。",
+    ],
+}
 
 
 # ===== Google Drive =====
@@ -390,6 +435,9 @@ def download_single_image(file_id):
 def generate_tags(image_name):
     """ファイル名からハッシュタグを生成"""
     tags = list(BASE_TAGS)
+    traits = detect_image_traits(image_name)
+    if traits["tan"]:
+        tags.extend(['褐色美女', '小麦肌', '日焼け'])
     name_lower = image_name.lower().replace('-', ' ').replace('_', ' ')
     matched = set()
     for keyword, keyword_tags in CONTENT_TAG_MAP.items():
@@ -410,32 +458,64 @@ def generate_tags(image_name):
 
 def extract_category(image_name):
     """ファイル名からカテゴリを推定"""
-    parts = image_name.replace('-', ' ').replace('_', ' ').split()
-    skip = {'jpg', 'jpeg', 'png', 'webp', 'img', 'image', 'photo'}
+    stem = os.path.splitext(os.path.basename(image_name))[0]
+    parts = re.split(r'[\s_\-()（）\[\]【】]+', stem)
+    skip = {'jpg', 'jpeg', 'png', 'webp', 'img', 'image', 'photo', 'undefined'}
     for p in parts:
-        if p.lower() not in skip and len(p) > 2:
+        token = p.strip()
+        if not token:
+            continue
+        token_lower = token.lower()
+        if token_lower in skip:
+            continue
+        if token_lower.isdigit():
+            continue
+        if len(token) > 2:
             return p.capitalize()
-    return "Muscle Art"
+    return "フィジークショット"
 
 
 def build_title(image_name):
     """ブログタイトルを生成"""
     category = extract_category(image_name)
-    template = random.choice(TITLE_TEMPLATES)
+    traits = detect_image_traits(image_name)
+    templates = list(TITLE_TEMPLATES)
+    for trait_name, trait_templates in CONDITIONAL_TITLE_TEMPLATES.items():
+        if traits.get(trait_name):
+            templates.extend(trait_templates)
+    template = random.choice(templates)
     return template.format(category=category)
 
 
-def build_body_html(image_name, image_url, tags):
+def build_caption(image_name):
+    """画像名から安全なキャプション候補を選ぶ。"""
+    traits = detect_image_traits(image_name)
+    templates = list(CAPTION_TEMPLATES)
+    for trait_name, trait_templates in CONDITIONAL_CAPTION_TEMPLATES.items():
+        if traits.get(trait_name):
+            templates.extend(trait_templates)
+    return random.choice(templates)
+
+
+def build_body_html(image_name, image_url, tags, title=None, include_image=True):
     """ブログ本文のHTMLを生成"""
     category = extract_category(image_name)
-    title = build_title(image_name)
+    title = title or build_title(image_name)
     hashtags = ' '.join([f'#{t}' for t in tags[:15]])
-    caption = random.choice(CAPTION_TEMPLATES)
+    caption = build_caption(image_name)
     template = random.choice(BODY_TEMPLATES)
+    image_html = ""
+    if include_image and image_url:
+        image_html = (
+            '\n<br/>\n'
+            f'<img src="{image_url}" alt="{category}" style="max-width: 100%; height: auto; border-radius: 8px;" />\n'
+            '<br/><br/>\n'
+        )
 
     html = template.format(
         title=title,
         image_url=image_url,
+        image_html=image_html,
         category=category,
         caption=caption,
         hashtags=hashtags,
@@ -608,7 +688,9 @@ def post_blog_entry(driver, title, body_html, image_path, tags):
 
         # --- 2. 画像アップロード＆本文挿入 ---
         if image_path:
-            upload_image_via_selenium(driver, image_path)
+            if not upload_image_via_selenium(driver, image_path):
+                print("Error: 画像を本文に挿入できなかったため投稿を中止します")
+                return False
 
         # --- 3. CKEditor APIでテキスト追加 ---
         print("本文テキスト追加（CKEditor API）...")
@@ -804,14 +886,6 @@ def main():
         print("Error: 画像ソースがありません")
         return 1
 
-    # タイトル・本文HTML生成
-    title = build_title(image["name"])
-    body_html = build_body_html(image["name"], image_url, tags)
-
-    print(f"Title: {title}")
-    print(f"Tags: {', '.join(tags[:10])}...")
-    print()
-
     # ローカル画像パスを決定
     image_path = None
     if image.get("local_path"):
@@ -831,6 +905,23 @@ def main():
             print(f"画像ダウンロードエラー: {e}")
             # 画像なしでテキストのみ投稿を続行
             image_path = None
+
+    # タイトル・本文HTML生成
+    # Seleniumで画像を挿入できる場合、本文HTML側の<img>は省き、重複・空画像を防ぐ。
+    title = build_title(image["name"])
+    include_inline_image = image_path is None and bool(image_url)
+    body_html = build_body_html(
+        image["name"],
+        image_url,
+        tags,
+        title=title,
+        include_image=include_inline_image,
+    )
+
+    print(f"Title: {title}")
+    print(f"Tags: {', '.join(tags[:10])}...")
+    print(f"Inline image in body: {include_inline_image}")
+    print()
 
     # Seleniumでブログ投稿
     driver = None
