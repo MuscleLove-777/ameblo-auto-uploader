@@ -203,14 +203,29 @@ def detect_image_traits(image_name):
         "armpit": _name_has_any(name_lower, ARMPIT_KEYWORDS),
     }
 
+
+def generic_category(image_name):
+    """ファイル名の固有名詞や日付を出さず、投稿向けの汎用ラベルへ丸める。"""
+    traits = detect_image_traits(image_name)
+    if traits["abs"] and traits["armpit"]:
+        return "腹筋と腕上げポーズの筋肉女子"
+    if traits["abs"]:
+        return "腹筋が映える筋肉女子"
+    if traits["armpit"]:
+        return "腕上げポーズの筋肉女子"
+    if traits["tan"]:
+        return "小麦肌の筋肉女子"
+    return "筋肉女子"
+
+
 # ブログタイトルテンプレート（ランダム選択）
 TITLE_TEMPLATES = [
     "✨ しょーがないなぁ、特別に見せてあげる♡ 今日の{category}",
     "💪 今日の{category}、ポージングの存在感が強い",
-    "🔥 視線とシルエットで魅せる{category} | MuscleLove",
-    "♡ {category} — かわいさと強さのバランスが良すぎる",
+    "🔥 視線とシルエットで魅せる{category}",
+    "♡ {category}、かわいさと強さのバランスが良すぎる",
     "✨ ふ〜ん…この{category}、ちょっと見入っちゃうでしょ",
-    "💪 MuscleLove本日の一枚：{category}",
+    "💪 本日の一枚：{category}",
 ]
 
 CONDITIONAL_TITLE_TEMPLATES = {
@@ -318,7 +333,7 @@ More exclusive content on Patreon
 CAPTION_TEMPLATES = [
     "💪 今日の一枚、ポージングとシルエットの説得力がいい。強さとかわいさのバランスが刺さる♡",
     "✨ 画面越しでも存在感が伝わるショット。表情とボディラインの見せ方がうまいんだよね。",
-    "🔥 余裕ある雰囲気なのに、フィットネス感もしっかりある。このバランスがMuscleLoveっぽい。",
+    "🔥 余裕ある雰囲気なのに、フィットネス感もしっかりある。このバランスがいい。",
     "♡ 派手に言いすぎなくても伝わるタイプの一枚。ポーズ、表情、全体のラインがきれい。",
     "💪 しょーがないなぁ、今日はこの一枚。見れば見るほどボディメイクの魅力が出てくるやつ。",
     "✨ 筋肉美女らしい存在感と、やわらかい雰囲気が同居してる。今日の投稿にちょうどいい仕上がり♡",
@@ -457,22 +472,8 @@ def generate_tags(image_name):
 
 
 def extract_category(image_name):
-    """ファイル名からカテゴリを推定"""
-    stem = os.path.splitext(os.path.basename(image_name))[0]
-    parts = re.split(r'[\s_\-()（）\[\]【】]+', stem)
-    skip = {'jpg', 'jpeg', 'png', 'webp', 'img', 'image', 'photo', 'undefined'}
-    for p in parts:
-        token = p.strip()
-        if not token:
-            continue
-        token_lower = token.lower()
-        if token_lower in skip:
-            continue
-        if token_lower.isdigit():
-            continue
-        if len(token) > 2:
-            return p.capitalize()
-    return "フィジークショット"
+    """投稿表示用カテゴリを返す。日付・ファイル名・キャラ名は出さない。"""
+    return generic_category(image_name)
 
 
 def build_title(image_name):
