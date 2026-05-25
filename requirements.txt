@@ -1,6 +1,5 @@
 selenium
 webdriver-manager
-requests
 gdown<6
 pytrends
 Pillow

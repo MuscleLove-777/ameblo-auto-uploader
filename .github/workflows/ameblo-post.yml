@@ -2,7 +2,7 @@ name: Ameba Blog Auto Post
 
 on:
   schedule:
-    # 1日3本（規約配慮で4-6時間以上の間隔を確保）
+    # 1日3回。各実行の間隔を4時間以上あける。
     - cron: '0 3 * * *'   # JST 12:00 (UTC 03:00)
     - cron: '0 9 * * *'   # JST 18:00 (UTC 09:00)
     - cron: '0 13 * * *'  # JST 22:00 (UTC 13:00)
@@ -17,9 +17,10 @@ jobs:
 
     env:
       GDRIVE_FOLDER_ID_AMEBLO: ${{ secrets.GDRIVE_FOLDER_ID_AMEBLO }}
-      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       AMEBLO_USERNAME: ${{ secrets.AMEBLO_USERNAME }}
       AMEBLO_PASSWORD: ${{ secrets.AMEBLO_PASSWORD }}
+      AMEBLO_COOKIE_ONLY: "1"
+      AMEBLO_COOKIE_MIN_REMAINING_HOURS: "6"
 
     steps:
       - name: Checkout repository
@@ -43,8 +44,14 @@ jobs:
         env:
           AMEBLO_COOKIES: ${{ secrets.AMEBLO_COOKIES }}
 
+      - name: Check Ameblo cookie freshness
+        id: auth_check
+        continue-on-error: true
+        run: python upload.py --check-auth-only
+
       - name: Run upload script (attempt 1)
         id: attempt1
+        if: steps.auth_check.outcome == 'success'
         continue-on-error: true
         run: |
           python upload.py \
@@ -53,12 +60,12 @@ jobs:
             --disable-dev-shm-usage
 
       - name: Wait before retry
-        if: steps.attempt1.outcome == 'failure'
+        if: steps.auth_check.outcome == 'success' && steps.attempt1.outcome == 'failure'
         run: echo "1回目失敗。60秒待ってリトライ..." && sleep 60
 
       - name: Run upload script (attempt 2)
         id: attempt2
-        if: steps.attempt1.outcome == 'failure'
+        if: steps.auth_check.outcome == 'success' && steps.attempt1.outcome == 'failure'
         continue-on-error: true
         run: |
           python upload.py \
@@ -67,12 +74,12 @@ jobs:
             --disable-dev-shm-usage
 
       - name: Wait before retry 2
-        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
+        if: steps.auth_check.outcome == 'success' && steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
         run: echo "2回目失敗。120秒待ってリトライ..." && sleep 120
 
       - name: Run upload script (attempt 3 - final)
         id: attempt3
-        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
+        if: steps.auth_check.outcome == 'success' && steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
         run: |
           python upload.py \
             --headless \
@@ -90,11 +97,16 @@ jobs:
           git push
 
       - name: LINE notify on failure
-        if: steps.attempt1.outcome == 'failure' && (steps.attempt2.outcome == 'failure' || steps.attempt2.outcome == 'skipped') && (steps.attempt3.outcome == 'failure' || steps.attempt3.outcome == 'skipped')
+        if: steps.auth_check.outcome == 'failure' || (steps.attempt1.outcome == 'failure' && (steps.attempt2.outcome == 'failure' || steps.attempt2.outcome == 'skipped') && (steps.attempt3.outcome == 'failure' || steps.attempt3.outcome == 'skipped'))
         env:
           LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: |
+          if [ "${{ steps.auth_check.outcome }}" = "failure" ]; then
+            FAILURE_TEXT="Ameblo Cookie が期限切れです。ローカルで save_cookies.py を実行して AMEBLO_COOKIES を更新してください"
+          else
+            FAILURE_TEXT="Ameblo自動投稿が3回リトライしても失敗しました"
+          fi
           curl -s -X POST https://api.line.me/v2/bot/message/push \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${LINE_CHANNEL_TOKEN}" \
@@ -102,7 +114,7 @@ jobs:
               \"to\": \"${LINE_USER_ID}\",
               \"messages\": [{
                 \"type\": \"text\",
-                \"text\": \"⚠️ Ameblo自動投稿が3回リトライしても失敗しました\n\n時刻: $(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST')\nリポジトリ: ${{ github.repository }}\nログ: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+                \"text\": \"${FAILURE_TEXT}\n\n時刻: $(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST')\nリポジトリ: ${{ github.repository }}\nログ: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
               }]
             }"
 
@@ -125,6 +137,6 @@ jobs:
               \"to\": \"${LINE_USER_ID}\",
               \"messages\": [{
                 \"type\": \"text\",
-                \"text\": \"✅ Ameblo自動投稿 成功${RETRY_INFO}\n時刻: $(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST')\"
+                \"text\": \"Ameblo自動投稿 成功${RETRY_INFO}\n時刻: $(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST')\"
               }]
             }"

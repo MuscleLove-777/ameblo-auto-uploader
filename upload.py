@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Ameba Blog (ameblo.jp) 画像自動投稿（GitHub Actions用）
-Google Driveから画像取得 -> ランダム1枚をブログ記事として投稿 -> アップロード済みを記録
+公開Driveフォルダからgdownで画像取得 -> ランダム1枚をブログ記事として投稿 -> アップロード済みを記録
 Selenium使用（Ameba公式APIなし）
 """
 import sys
@@ -12,14 +12,91 @@ import re
 import time
 from datetime import datetime, timezone, timedelta
 
-import requests
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-
-from ameblo_auth import create_driver, navigate_to_editor, human_delay, login_ameba
-
 COOKIE_FILE = os.path.join(os.path.dirname(__file__), "ameblo_cookies.json")
+AUTH_EXPIRED_EXIT_CODE = 20
+DEFAULT_COOKIE_MIN_REMAINING_HOURS = 6
+By = None
+Keys = None
+WebDriverWait = None
+EC = None
+create_driver = None
+navigate_to_editor = None
+human_delay = None
+login_ameba = None
+
+
+def load_selenium_helpers():
+    """期限チェックだけの実行ではSeleniumを読み込まない。"""
+    global By, Keys, WebDriverWait, EC
+    global create_driver, navigate_to_editor, human_delay, login_ameba
+
+    if By is not None:
+        return
+
+    from selenium.webdriver.common.by import By as SeleniumBy
+    from selenium.webdriver.common.keys import Keys as SeleniumKeys
+    from selenium.webdriver.support.ui import WebDriverWait as SeleniumWebDriverWait
+    from selenium.webdriver.support import expected_conditions as SeleniumEC
+    from ameblo_auth import create_driver as auth_create_driver
+    from ameblo_auth import navigate_to_editor as auth_navigate_to_editor
+    from ameblo_auth import human_delay as auth_human_delay
+    from ameblo_auth import login_ameba as auth_login_ameba
+
+    By = SeleniumBy
+    Keys = SeleniumKeys
+    WebDriverWait = SeleniumWebDriverWait
+    EC = SeleniumEC
+    create_driver = auth_create_driver
+    navigate_to_editor = auth_navigate_to_editor
+    human_delay = auth_human_delay
+    login_ameba = auth_login_ameba
+
+
+def cookie_auth_required():
+    """CIではreCAPTCHAで止まるため、パスワードログインにフォールバックしない。"""
+    return (
+        os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+        or os.environ.get("AMEBLO_COOKIE_ONLY", "").lower() in ("1", "true", "yes")
+    )
+
+
+def check_cookie_freshness(min_remaining_hours=None):
+    """Actions実行前にAmeba認証Cookieがまだ使えるかを軽く確認する。"""
+    if min_remaining_hours is None:
+        min_remaining_hours = int(
+            os.environ.get("AMEBLO_COOKIE_MIN_REMAINING_HOURS", DEFAULT_COOKIE_MIN_REMAINING_HOURS)
+        )
+
+    if not os.path.exists(COOKIE_FILE):
+        return False, "ameblo_cookies.json がありません"
+
+    try:
+        with open(COOKIE_FILE, "r", encoding="utf-8") as f:
+            cookies = json.load(f)
+    except Exception as e:
+        return False, f"ameblo_cookies.json を読めません: {e}"
+
+    if not isinstance(cookies, list) or not cookies:
+        return False, "ameblo_cookies.json が空です"
+
+    at_cookie = next((c for c in cookies if c.get("name") == "AT"), None)
+    if not at_cookie:
+        return False, "AT Cookie がありません。手動ログインでCookie再取得が必要です"
+
+    expiry = at_cookie.get("expiry")
+    if not expiry:
+        return False, "AT Cookie に expiry がありません。手動ログインでCookie再取得が必要です"
+
+    now = datetime.now(timezone.utc).timestamp()
+    remaining_hours = (float(expiry) - now) / 3600
+    expiry_jst = datetime.fromtimestamp(float(expiry), JST).strftime("%Y-%m-%d %H:%M JST")
+    if remaining_hours < min_remaining_hours:
+        return (
+            False,
+            f"AT Cookie 期限切れ/期限間近です。expiry={expiry_jst}, remaining={remaining_hours:.1f}h",
+        )
+
+    return True, f"AT Cookie OK: expiry={expiry_jst}, remaining={remaining_hours:.1f}h"
 
 
 def login_with_cookies(driver):
@@ -61,6 +138,11 @@ def login_with_cookies(driver):
     human_delay(3, 5)
 
     if "signin" in driver.current_url or "login" in driver.current_url or "auth.user.ameba" in driver.current_url:
+        if cookie_auth_required():
+            print("Error: Cookieログインに失敗しました。ActionsではreCAPTCHA回避のためパスワードログインを行いません。")
+            print("save_cookies.py でCookieを再取得し、GitHub Secret AMEBLO_COOKIES を更新してください。")
+            return False
+
         print("Warning: Cookieが期限切れです。パスワードログインを試行します...")
         username = os.environ.get("AMEBLO_USERNAME", "")
         password = os.environ.get("AMEBLO_PASSWORD", "")
@@ -95,7 +177,6 @@ JST = timezone(timedelta(hours=9))
 
 # --- 環境変数 ---
 GDRIVE_FOLDER_ID = os.environ.get("GDRIVE_FOLDER_ID_AMEBLO", "")
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 
 PATREON_LINK = "https://www.patreon.com/c/MuscleLove?utm_source=ameblo"
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
@@ -147,11 +228,38 @@ CONTENT_TAG_MAP = {
 }
 
 BASE_TAGS = [
-    '筋肉女子', '筋トレ女子', 'マッスルガール', 'フィットネス',
-    'ボディメイク', 'ワークアウト', 'ジム', 'トレーニング',
-    'ワキフェチ', '腕フェチ', '筋肉美', 'AI美女',
-    'むちむち',
+    '筋肉女子', '筋トレ女子', 'フィットネス', 'ボディメイク',
+    '筋トレ', 'ワークアウト', '美ボディ', '筋肉美',
 ]
+
+AMEBLO_POPULAR_TAGS = [
+    'ダイエット', '美容', '健康', '自分磨き', 'トレーニング',
+    'ジム', '腹筋', '腹筋女子', 'くびれ', '体幹',
+    '姿勢改善', '健康美', 'モチベーション', 'ジム女子',
+    '宅トレ', '筋トレ初心者', 'ボディライン', 'フィジーク',
+    'ボディビル', 'パーソナルトレーニング',
+]
+
+AMEBLO_TAG_DENYLIST = {
+    'ありがとう', '感謝', 'おはよう', 'こんにちは', 'こんばんは',
+    '日記', 'ブログ', '今日の出来事', 'ランチ', '晩ごはん',
+    'お弁当', '料理', 'カフェ', '旅行', '花', '空',
+    '猫', '犬', '子育て', '育児', 'トレンド', 'ニュース',
+    'テレビ', 'ドラマ', '映画', 'アニメ', '推し', '誕生日',
+    'おめでとう',
+}
+
+AMEBLO_SAFE_GENERAL_TREND_TAGS = [
+    'ありがとう',
+]
+
+AMEBLO_TAG_ALLOW_KEYWORDS = (
+    '筋', 'トレ', 'ジム', 'フィット', 'ボディ', 'マッスル',
+    '腹筋', 'くびれ', '体幹', '健康', '美容', 'ダイエット',
+    '姿勢', 'ワークアウト', 'フィジーク', 'ボディビル',
+    'アスリート', 'ウェルネス', '自分磨き', '宅トレ',
+    'fitness', 'workout', 'gym', 'training', 'muscle', 'body',
+)
 
 TAN_KEYWORDS = {
     'tan', 'tanned', 'darktan', 'dark-tan', 'brown', 'bronze',
@@ -191,6 +299,106 @@ def _name_has_any(name_lower, keywords):
         if key in name_lower or compact_key in compact_name:
             return True
     return False
+
+
+def clean_tag(tag):
+    """Amebaへ入れる前に、#や空白を取り除いた短いタグ名へ正規化する。"""
+    tag = str(tag or "").strip()
+    tag = re.sub(r'^[#＃]+', '', tag)
+    tag = re.sub(r'\s+', '', tag)
+    tag = tag.strip('、。,.!！?？/\\|:：;；"\'「」『』()（）[]【】<>＜＞')
+    return tag
+
+
+def _curated_ameblo_tag_set():
+    curated = set(BASE_TAGS) | set(AMEBLO_POPULAR_TAGS)
+    for keyword_tags in CONTENT_TAG_MAP.values():
+        curated.update(keyword_tags)
+    curated.update([
+        '褐色美女', '小麦肌', '日焼け', '肩トレ', '腕トレ',
+        '上半身トレ', 'シックスパック', 'コアトレ',
+    ])
+    return curated
+
+
+def is_relevant_ameblo_tag(tag):
+    """汎用人気タグではなく、MuscleLove投稿に寄せられるタグだけ通す。"""
+    clean = clean_tag(tag)
+    if not clean:
+        return False
+    key = clean.lower()
+    denied = {t.lower() for t in AMEBLO_TAG_DENYLIST}
+    if key in denied:
+        return False
+    if len(clean) > 30 or 'http' in key or any(mark in clean for mark in ('@', '#', '＃')):
+        return False
+    if clean in _curated_ameblo_tag_set():
+        return True
+    return any(keyword.lower() in key for keyword in AMEBLO_TAG_ALLOW_KEYWORDS)
+
+
+def is_safe_general_trend_tag(tag):
+    """Amebaで流行中なら最後に1つだけ混ぜてもよい汎用タグ。"""
+    return clean_tag(tag) in AMEBLO_SAFE_GENERAL_TREND_TAGS
+
+
+def normalize_ameblo_tags(candidates, max_tags=None, allow_safe_general=False):
+    """重複・無関係タグを除去して、Ameba向けのタグリストに整える。"""
+    seen = set()
+    tags = []
+    for candidate in candidates:
+        tag = clean_tag(candidate)
+        key = tag.lower()
+        allowed = is_relevant_ameblo_tag(tag) or (allow_safe_general and is_safe_general_trend_tag(tag))
+        if not tag or key in seen or not allowed:
+            continue
+        tags.append(tag)
+        seen.add(key)
+        if max_tags and len(tags) >= max_tags:
+            break
+    return tags
+
+
+def select_ameblo_tags(candidates, max_tags=15, allow_safe_general=False):
+    """安全な汎用トレンドがある場合は最後の1枠として残す。"""
+    if not allow_safe_general:
+        return normalize_ameblo_tags(candidates, max_tags=max_tags)
+
+    safe_general = []
+    for candidate in candidates:
+        tag = clean_tag(candidate)
+        if tag and is_safe_general_trend_tag(tag):
+            safe_general.append(tag)
+
+    reserve = 1 if safe_general and max_tags else 0
+    normal_limit = max_tags - reserve if reserve else max_tags
+    tags = normalize_ameblo_tags(candidates, max_tags=normal_limit)
+
+    seen = {t.lower() for t in tags}
+    for tag in safe_general:
+        if tag.lower() not in seen:
+            tags.append(tag)
+            break
+    return tags[:max_tags] if max_tags else tags
+
+
+def enrich_tags_with_trends(base_tags, trend_tags=None, max_tags=15):
+    """固定タグ、関連トレンド、人気寄りタグを混ぜて毎回少し変える。"""
+    candidates = list(base_tags)
+    safe_general_trends = list(AMEBLO_SAFE_GENERAL_TREND_TAGS)
+
+    for tag in trend_tags or []:
+        if is_relevant_ameblo_tag(tag):
+            candidates.append(tag)
+        elif is_safe_general_trend_tag(tag) and clean_tag(tag) not in safe_general_trends:
+            safe_general_trends.append(clean_tag(tag))
+
+    popular_pool = list(AMEBLO_POPULAR_TAGS)
+    random.shuffle(popular_pool)
+    candidates.extend(popular_pool)
+
+    candidates.extend(safe_general_trends)
+    return select_ameblo_tags(candidates, max_tags=max_tags, allow_safe_general=True)
 
 
 def detect_image_traits(image_name):
@@ -359,40 +567,11 @@ CONDITIONAL_CAPTION_TEMPLATES = {
 }
 
 
-# ===== Google Drive =====
+# ===== 公開Driveフォルダ =====
 
 def list_gdrive_images(folder_id):
-    """Google Drive APIまたはgdownで画像一覧を取得"""
-    if GOOGLE_API_KEY:
-        return _list_via_api(folder_id)
-    else:
-        return _list_via_gdown(folder_id)
-
-
-def _list_via_api(folder_id):
-    """Google Drive API v3で画像一覧を取得"""
-    url = "https://www.googleapis.com/drive/v3/files"
-    query = f"'{folder_id}' in parents and trashed = false"
-    params = {
-        "q": query,
-        "key": GOOGLE_API_KEY,
-        "fields": "files(id,name,mimeType)",
-        "pageSize": 1000,
-    }
-    resp = requests.get(url, params=params)
-    resp.raise_for_status()
-    files = resp.json().get("files", [])
-
-    images = []
-    for f in files:
-        ext = os.path.splitext(f["name"])[1].lower()
-        if ext in IMAGE_EXTENSIONS:
-            images.append({
-                "id": f["id"],
-                "name": f["name"],
-                "url": f"https://drive.google.com/uc?export=download&id={f['id']}",
-            })
-    return images
+    """gdownで画像一覧を取得"""
+    return _list_via_gdown(folder_id)
 
 
 def _list_via_gdown(folder_id):
@@ -437,22 +616,23 @@ def _list_via_gdown(folder_id):
     return images
 
 
-def download_single_image(file_id):
-    """Google Driveから1ファイルをダウンロード"""
-    url = f"https://drive.google.com/uc?export=download&id={file_id}"
-    resp = requests.get(url)
-    resp.raise_for_status()
-    return resp.content
-
-
 # ===== タグ・テキスト生成 =====
 
 def generate_tags(image_name):
     """ファイル名からハッシュタグを生成"""
     tags = list(BASE_TAGS)
+    popular_pool = list(AMEBLO_POPULAR_TAGS)
+    random.shuffle(popular_pool)
+    tags.extend(popular_pool[:8])
+
     traits = detect_image_traits(image_name)
     if traits["tan"]:
         tags.extend(['褐色美女', '小麦肌', '日焼け'])
+    if traits["abs"]:
+        tags.extend(['腹筋', '腹筋女子', 'シックスパック', '体幹', 'くびれ'])
+    if traits["armpit"]:
+        tags.extend(['肩トレ', '腕トレ', '上半身トレ'])
+
     name_lower = image_name.lower().replace('-', ' ').replace('_', ' ')
     matched = set()
     for keyword, keyword_tags in CONTENT_TAG_MAP.items():
@@ -461,14 +641,7 @@ def generate_tags(image_name):
                 if t not in matched:
                     tags.append(t)
                     matched.add(t)
-    # 重複除去
-    seen = set()
-    unique_tags = []
-    for t in tags:
-        if t.lower() not in seen:
-            seen.add(t.lower())
-            unique_tags.append(t)
-    return unique_tags
+    return normalize_ameblo_tags(tags, max_tags=15)
 
 
 def extract_category(image_name):
@@ -502,7 +675,7 @@ def build_body_html(image_name, image_url, tags, title=None, include_image=True)
     """ブログ本文のHTMLを生成"""
     category = extract_category(image_name)
     title = title or build_title(image_name)
-    hashtags = ' '.join([f'#{t}' for t in tags[:15]])
+    hashtags = ' '.join([f'#{t}' for t in select_ameblo_tags(tags, max_tags=15, allow_safe_general=True)])
     caption = build_caption(image_name)
     template = random.choice(BODY_TEMPLATES)
     image_html = ""
@@ -529,7 +702,7 @@ def build_body_html(image_name, image_url, tags, title=None, include_image=True)
 
 def build_ameblo_hashtags(tags, max_tags=10):
     """Amebloのハッシュタグ文字列を生成（投稿フォームのタグ欄用）"""
-    return tags[:max_tags]
+    return select_ameblo_tags(tags, max_tags=max_tags, allow_safe_general=True)
 
 
 # ===== Selenium ブログ投稿 =====
@@ -658,6 +831,71 @@ def insert_text_via_ckeditor(driver, extra_html):
     return True
 
 
+def set_ameblo_hashtags(driver, tags):
+    """Ameba投稿フォームのタグ欄が見つかる場合だけ、公式タグ欄にも入れる。"""
+    tag_names = build_ameblo_hashtags(tags, max_tags=10)
+    if not tag_names:
+        return False
+
+    selectors = [
+        'input[placeholder*="ハッシュタグ"]',
+        'textarea[placeholder*="ハッシュタグ"]',
+        'input[aria-label*="ハッシュタグ"]',
+        'textarea[aria-label*="ハッシュタグ"]',
+        'input[name*="tag"]',
+        'textarea[name*="tag"]',
+        'input[id*="tag"]',
+        'textarea[id*="tag"]',
+    ]
+
+    for selector in selectors:
+        for element in driver.find_elements(By.CSS_SELECTOR, selector):
+            try:
+                if not element.is_displayed() or not element.is_enabled():
+                    continue
+                element.click()
+                current = element.get_attribute("value") or ""
+                if current:
+                    element.clear()
+                for tag in tag_names:
+                    element.send_keys(tag)
+                    element.send_keys(Keys.ENTER)
+                    time.sleep(0.2)
+                print(f"ハッシュタグ欄へ入力: {', '.join(tag_names)}")
+                return True
+            except Exception:
+                continue
+
+    # React系の入力欄でsend_keysが効かない場合の軽いフォールバック。
+    result = driver.execute_script("""
+    const tags = arguments[0];
+    const value = tags.map((tag) => '#' + tag).join(' ');
+    const nodes = Array.from(document.querySelectorAll('input, textarea'));
+    for (const el of nodes) {
+      const hint = [
+        el.placeholder || '',
+        el.getAttribute('aria-label') || '',
+        el.name || '',
+        el.id || ''
+      ].join(' ').toLowerCase();
+      if (!hint.includes('tag') && !hint.includes('ハッシュタグ')) continue;
+      if (el.offsetParent === null || el.disabled || el.readOnly) continue;
+      el.value = value;
+      el.dispatchEvent(new Event('input', {bubbles: true}));
+      el.dispatchEvent(new Event('change', {bubbles: true}));
+      return value;
+    }
+    return '';
+    """, tag_names)
+
+    if result:
+        print(f"ハッシュタグ欄へ入力(JS): {', '.join(tag_names)}")
+        return True
+
+    print("ハッシュタグ欄は見つからず（本文内タグのみ使用）")
+    return False
+
+
 def post_blog_entry(driver, title, body_html, image_path, tags):
     """
     ブログ記事を投稿する（CKEditor API使用の実証済みフロー）
@@ -698,7 +936,11 @@ def post_blog_entry(driver, title, body_html, image_path, tags):
         insert_text_via_ckeditor(driver, body_html)
         time.sleep(2)
 
-        # --- 4. 投稿ボタンクリック ---
+        # --- 4. ハッシュタグ欄がある場合は入力 ---
+        set_ameblo_hashtags(driver, tags)
+        time.sleep(1)
+
+        # --- 5. 投稿ボタンクリック ---
         print("投稿中...")
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(1)
@@ -752,7 +994,7 @@ def post_blog_entry(driver, title, body_html, image_path, tags):
 
         time.sleep(8)
 
-        # --- 5. 「カバーなしで投稿する」ダイアログ対応 ---
+        # --- 6. 「カバーなしで投稿する」ダイアログ対応 ---
         try:
             for btn in driver.find_elements(By.CSS_SELECTOR, "button, a"):
                 try:
@@ -766,7 +1008,7 @@ def post_blog_entry(driver, title, body_html, image_path, tags):
         except Exception:
             pass
 
-        # --- 6. 投稿成功確認 ---
+        # --- 7. 投稿成功確認 ---
         current_url = driver.current_url
         print(f"最終URL: {current_url}")
 
@@ -817,8 +1059,24 @@ def save_uploaded_log(log):
 # ===== メイン =====
 
 def main():
+    if "--check-auth-only" in sys.argv:
+        ok, message = check_cookie_freshness()
+        if ok:
+            print(message)
+            return 0
+        print(f"Error: {message}")
+        print("ローカルで save_cookies.py を実行して、GitHub Secret AMEBLO_COOKIES を更新してください。")
+        return AUTH_EXPIRED_EXIT_CODE
+
     # 認証チェック（Cookie方式 + パスワードフォールバック）
-    if not os.path.exists(COOKIE_FILE):
+    if cookie_auth_required():
+        ok, message = check_cookie_freshness()
+        if not ok:
+            print(f"Error: {message}")
+            print("Actionsではパスワードログインを使わず停止します。Cookieを更新してください。")
+            return AUTH_EXPIRED_EXIT_CODE
+        print(message)
+    elif not os.path.exists(COOKIE_FILE):
         username = os.environ.get("AMEBLO_USERNAME", "")
         password = os.environ.get("AMEBLO_PASSWORD", "")
         if not username or not password:
@@ -839,8 +1097,8 @@ def main():
     print("=" * 50)
     print()
 
-    # Google Driveから画像一覧取得
-    print("Google Driveから画像一覧を取得中...")
+    # 公開Driveフォルダから画像一覧取得
+    print("公開Driveフォルダから画像一覧を取得中...")
     images = list_gdrive_images(GDRIVE_FOLDER_ID)
     if not images:
         print("No images found!")
@@ -862,50 +1120,23 @@ def main():
     # タグ生成
     tags = generate_tags(image["name"])
 
-    # トレンドタグ追加
+    # 関連するトレンドタグだけ追加（汎用人気タグは除外）
+    trend_tags = []
     try:
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'x-auto-uploader'))
         from trending import get_trending_tags
-        trend_tags = get_trending_tags(max_tags=5)
-        if trend_tags:
-            seen = {t.lower() for t in tags}
-            for t in trend_tags:
-                if t.lower() not in seen:
-                    tags.append(t)
-                    seen.add(t.lower())
+        trend_tags = get_trending_tags(max_tags=8)
     except ImportError:
         print("trending.py not found, skipping trend tags")
+    tags = enrich_tags_with_trends(tags, trend_tags=trend_tags, max_tags=15)
 
-    # 画像URLを決定
-    if image.get("id"):
-        image_url = image["url"]
-    elif image.get("local_path"):
-        # ローカルファイルの場合、Google DriveのURLは使えないので
-        # 投稿時にSelenium経由でアップロードする
-        image_url = ""
-    else:
+    # gdownで取得したローカル画像をSelenium経由でアップロードする
+    image_url = ""
+    if not image.get("local_path"):
         print("Error: 画像ソースがありません")
         return 1
 
-    # ローカル画像パスを決定
-    image_path = None
-    if image.get("local_path"):
-        image_path = os.path.abspath(image["local_path"])
-    elif image.get("id"):
-        # Google Drive APIの画像をダウンロードしてローカルに保存
-        print("Google Driveから画像をダウンロード中...")
-        try:
-            img_data = download_single_image(image["id"])
-            dl_dir = os.path.join(os.path.dirname(__file__), "images")
-            os.makedirs(dl_dir, exist_ok=True)
-            image_path = os.path.abspath(os.path.join(dl_dir, image["name"]))
-            with open(image_path, "wb") as f:
-                f.write(img_data)
-            print(f"ダウンロード完了: {image_path}")
-        except Exception as e:
-            print(f"画像ダウンロードエラー: {e}")
-            # 画像なしでテキストのみ投稿を続行
-            image_path = None
+    image_path = os.path.abspath(image["local_path"])
 
     # タイトル・本文HTML生成
     # Seleniumで画像を挿入できる場合、本文HTML側の<img>は省き、重複・空画像を防ぐ。
@@ -925,6 +1156,7 @@ def main():
     print()
 
     # Seleniumでブログ投稿
+    load_selenium_helpers()
     driver = None
     try:
         print("Chromeブラウザを起動中...")
@@ -938,6 +1170,10 @@ def main():
             print("Cookie未保存。パスワードログインを直接試行します...")
 
         if not login_success:
+            if cookie_auth_required():
+                print("ログイン失敗! AMEBLO_COOKIES を更新してください。")
+                return AUTH_EXPIRED_EXIT_CODE
+
             # パスワードログインを試行
             username = os.environ.get("AMEBLO_USERNAME", "")
             password = os.environ.get("AMEBLO_PASSWORD", "")
