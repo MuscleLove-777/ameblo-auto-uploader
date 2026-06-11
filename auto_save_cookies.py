@@ -63,8 +63,12 @@ def is_logged_in(driver):
 
 
 def main():
-    username = "atsurou.walking@gmail.com"
-    password = "KabuKeiba96000_"
+    username = os.environ.get("AMEBLO_USERNAME", "")
+    password = os.environ.get("AMEBLO_PASSWORD", "")
+    if not username or not password:
+        print("Error: 環境変数 AMEBLO_USERNAME / AMEBLO_PASSWORD を設定してください")
+        print("  PowerShell例: $env:AMEBLO_USERNAME='you@example.com'; $env:AMEBLO_PASSWORD='****'")
+        sys.exit(1)
 
     print("=== Cookie自動取得 ===")
     print("ブラウザが開きます。CAPTCHAが出たら手動で解決してください。")
