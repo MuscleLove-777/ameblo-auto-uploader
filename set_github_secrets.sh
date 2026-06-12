@@ -4,7 +4,7 @@
 
 GH="/c/Program Files/GitHub CLI/gh"
 REPO="MuscleLove-777/ameblo-auto-uploader"
-BASE64_FILE="c:/Users/atsus/000_ClaudeCode/004_MuscleLove/001_集客/ameblo-auto-uploader/ameblo_cookies_base64.txt"
+BASE64_FILE="$HOME/000_ClaudeCode/004_MuscleLove/001_集客/ameblo-auto-uploader/ameblo_cookies_base64.txt"
 
 echo "Setting AMEBLO_COOKIES secret..."
 "$GH" secret set AMEBLO_COOKIES --repo "$REPO" < "$BASE64_FILE"

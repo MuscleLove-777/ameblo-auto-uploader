@@ -13,7 +13,7 @@ set LOG_FILE=%SCRIPT_DIR%refresh.log
 set LOCK_FILE=%SCRIPT_DIR%.refresh.lock
 set MAX_DAYS=1
 set LOCK_STALE_HOURS=2
-set PYTHON_EXE=C:\Users\atsus\AppData\Local\Python\pythoncore-3.14-64\python.exe
+set PYTHON_EXE=%USERPROFILE%\AppData\Local\Python\pythoncore-3.14-64\python.exe
 
 REM --- concurrency guard: clear a stale lock left by an interrupted run ---
 if exist "%LOCK_FILE%" (
