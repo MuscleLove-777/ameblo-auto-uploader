@@ -140,3 +140,18 @@ jobs:
                 \"text\": \"Ameblo自動投稿 成功${RETRY_INFO}\n時刻: $(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST')\"
               }]
             }"
+
+      # 「緑なのに素通り」防止: 認証失敗(cookie失効)や投稿ゼロのときは
+      # ジョブを赤(failure)にして気づけるようにする。
+      - name: Mark job failed if nothing was posted
+        if: always()
+        run: |
+          if [ "${{ steps.auth_check.outcome }}" != "success" ]; then
+            echo "::error::Ameblo cookie の認証に失敗 (失効の可能性)。投稿は行われていません。ローカルで relogin_window.py を実行して AMEBLO_COOKIES を更新してください。"
+            exit 1
+          fi
+          if [ "${{ steps.attempt1.outcome }}" != "success" ] && [ "${{ steps.attempt2.outcome }}" != "success" ] && [ "${{ steps.attempt3.outcome }}" != "success" ]; then
+            echo "::error::Ameblo 投稿が3回とも失敗。投稿は行われていません。"
+            exit 1
+          fi
+          echo "Ameblo post OK (auth_check=${{ steps.auth_check.outcome }})."
