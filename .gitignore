@@ -37,3 +37,6 @@ cookies.txt
 .last_refresh
 .refresh.lock
 refresh.log
+.rclone_mldrive.conf
+queue_refill.log
+refill_run.log
