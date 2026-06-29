@@ -179,6 +179,8 @@ JST = timezone(timedelta(hours=9))
 GDRIVE_FOLDER_ID = os.environ.get("GDRIVE_FOLDER_ID_AMEBLO", "")
 
 PATREON_LINK = "https://www.patreon.com/c/MuscleLove?utm_source=ameblo"
+X_LINK = "https://x.com/MuscleGirlLove7?utm_source=ameblo"
+X_HANDLE = "@MuscleGirlLove7"
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
 UPLOADED_LOG = "uploaded_ameblo.json"
 
@@ -207,6 +209,45 @@ def build_backlink_block():
         f'<small style="color:#888;">💡 関連サイト：{items}</small>\n'
         "<!-- /ML_BACKLINK -->\n"
     )
+
+
+def build_x_cta_block():
+    """X(Twitter)フォロー導線。全記事に常時付与（CLAUDE.md: X+Patreon CTA必須）。"""
+    return (
+        "\n<br/>\n"
+        "<!-- ML_X_CTA -->\n"
+        '<p style="text-align:center; font-size:15px; margin:14px 0;">\n'
+        f'🐦 X(旧Twitter)で最新情報・先行画像 → '
+        f'<a href="{X_LINK}" target="_blank" rel="noopener" '
+        f'style="color:#1da1f2; font-weight:bold; text-decoration:none;">{X_HANDLE}</a>\n'
+        "</p>\n"
+        "<!-- /ML_X_CTA -->\n"
+    )
+
+
+# FANZA(eronavi)導線。Amebaはアダルトアフィリ禁止＝アカBANリスクのため既定オフ。
+# 有効化する場合のみ環境変数 AMEBLO_ENABLE_FANZA=1 を設定（ユーザー判断）。
+FANZA_ENABLED = os.environ.get("AMEBLO_ENABLE_FANZA", "0") == "1"
+ERONAVI_LINK = "https://musclelove-777.github.io/eronavi/?utm_source=ameblo&utm_medium=fanza_cta"
+
+
+def build_fanza_cta_block():
+    """FANZA(eronavi経由)誘導ブロック。18禁・PR明記。AMEBLO_ENABLE_FANZA=1 のときのみ付与。"""
+    if not FANZA_ENABLED:
+        return ""
+    return (
+        "\n<br/>\n"
+        "<!-- ML_FANZA_CTA -->\n"
+        '<div style="text-align:center; margin:16px auto; max-width:420px;">\n'
+        '<p style="font-size:11px; color:#999; margin:0 0 6px;">※18歳以上向けリンクを含みます／PR・アフィリエイトを含みます</p>\n'
+        f'<a href="{ERONAVI_LINK}" target="_blank" rel="noopener nofollow sponsored" '
+        f'style="display:inline-block; padding:9px 16px; background:#7c3aed; color:#fff; '
+        f'border-radius:6px; font-weight:bold; text-decoration:none; font-size:14px;">'
+        f'筋肉美女のFANZA系まとめ（18+）</a>\n'
+        "</div>\n"
+        "<!-- /ML_FANZA_CTA -->\n"
+    )
+
 
 # --- タグマッピング ---
 CONTENT_TAG_MAP = {
@@ -695,8 +736,8 @@ def build_body_html(image_name, image_url, tags, title=None, include_image=True)
         hashtags=hashtags,
         patreon_link=PATREON_LINK,
     )
-    # MuscleLove バックリンクブロックを末尾に付加（冪等マーカー付き）
-    html = html.rstrip() + build_backlink_block()
+    # 末尾CTA: X(常時) → FANZA(AMEBLO_ENABLE_FANZA=1のときのみ) → 関連サイト（冪等マーカー付き）
+    html = html.rstrip() + build_x_cta_block() + build_fanza_cta_block() + build_backlink_block()
     return html.strip()
 
 
