@@ -225,28 +225,9 @@ def build_x_cta_block():
     )
 
 
-# FANZA(eronavi)導線。Amebaはアダルトアフィリ禁止＝アカBANリスクのため既定オフ。
-# 有効化する場合のみ環境変数 AMEBLO_ENABLE_FANZA=1 を設定（ユーザー判断）。
-FANZA_ENABLED = os.environ.get("AMEBLO_ENABLE_FANZA", "0") == "1"
-ERONAVI_LINK = "https://musclelove-777.github.io/eronavi/?utm_source=ameblo&utm_medium=fanza_cta"
-
-
-def build_fanza_cta_block():
-    """FANZA(eronavi経由)誘導ブロック。18禁・PR明記。AMEBLO_ENABLE_FANZA=1 のときのみ付与。"""
-    if not FANZA_ENABLED:
-        return ""
-    return (
-        "\n<br/>\n"
-        "<!-- ML_FANZA_CTA -->\n"
-        '<div style="text-align:center; margin:16px auto; max-width:420px;">\n'
-        '<p style="font-size:11px; color:#999; margin:0 0 6px;">※18歳以上向けリンクを含みます／PR・アフィリエイトを含みます</p>\n'
-        f'<a href="{ERONAVI_LINK}" target="_blank" rel="noopener nofollow sponsored" '
-        f'style="display:inline-block; padding:9px 16px; background:#7c3aed; color:#fff; '
-        f'border-radius:6px; font-weight:bold; text-decoration:none; font-size:14px;">'
-        f'筋肉美女のFANZA系まとめ（18+）</a>\n'
-        "</div>\n"
-        "<!-- /ML_FANZA_CTA -->\n"
-    )
+# 注意: Amebaはアダルトアフィリ禁止（アカBANリスク）。FANZA/eronavi 等の成人向け導線は
+# このブログには絶対に載せない（フィットネス系backlink + X + Patreon のみ）。
+# 成人向けの収益化は eronavi 等のアダルトサイト側で行う方針。
 
 
 # --- タグマッピング ---
@@ -736,8 +717,8 @@ def build_body_html(image_name, image_url, tags, title=None, include_image=True)
         hashtags=hashtags,
         patreon_link=PATREON_LINK,
     )
-    # 末尾CTA: X(常時) → FANZA(AMEBLO_ENABLE_FANZA=1のときのみ) → 関連サイト（冪等マーカー付き）
-    html = html.rstrip() + build_x_cta_block() + build_fanza_cta_block() + build_backlink_block()
+    # 末尾CTA: X(常時) → 関連サイト（冪等マーカー付き）。Amebaにアダルト導線は載せない。
+    html = html.rstrip() + build_x_cta_block() + build_backlink_block()
     return html.strip()
 
 
