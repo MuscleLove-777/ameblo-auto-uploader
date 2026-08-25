@@ -6,11 +6,17 @@ Selenium使用（Ameba公式APIなし）
 """
 import sys
 import json
+import html
 import os
 import random
 import re
 import time
 from datetime import datetime, timezone, timedelta
+
+try:
+    import pool_loader
+except ImportError:
+    pool_loader = None
 
 COOKIE_FILE = os.path.join(os.path.dirname(__file__), "ameblo_cookies.json")
 AUTH_EXPIRED_EXIT_CODE = 20
@@ -184,6 +190,12 @@ X_HANDLE = "@MuscleGirlLove7"
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
 UPLOADED_LOG = "uploaded_ameblo.json"
 
+SAFE_FITNESS_BLOCKED_TERMS = {
+    "uncensored", "sexy", "nude", "porn", "fetish", "adult", "nsfw",
+    "18禁", "エロ", "アダルト", "無修正", "裸", "フェチ", "ワキ", "脇",
+    "armpit", "thicc", "fanza",
+}
+
 # --- MuscleLove バックリンクプール（フィットネス系のみ。ameblo規約配慮でアダルト系は除外） ---
 ML_BACKLINK_POOL_FITNESS = [
     ("https://musclelove-777.github.io/muscle-meal-girls/", "筋肉女子のマッスルメシ"),
@@ -223,6 +235,44 @@ def build_x_cta_block():
         "</p>\n"
         "<!-- /ML_X_CTA -->\n"
     )
+
+
+def load_ameblo_pool():
+    """Safe Fitnessの中央poolを読む。失敗時は既存コピーへ安全に戻る。"""
+    if pool_loader is None:
+        return {}
+    try:
+        return pool_loader.as_insights("safe_fitness", platform="ameblo") or {}
+    except Exception as exc:
+        print(f"[content_pool] fallback: {type(exc).__name__}")
+        return {}
+
+
+def assert_safe_fitness_preview(*values):
+    """broad媒体へ出せない語を本文・タグ・ファイル名の全体でfail-closedする。"""
+    text = "\n".join(str(value or "") for value in values).lower()
+    hits = sorted(term for term in SAFE_FITNESS_BLOCKED_TERMS if term.lower() in text)
+    if hits:
+        raise ValueError(f"Safe Fitness blocked terms: {', '.join(hits)}")
+
+
+def build_pool_cta_block(insights):
+    """中央poolのうち、Safe Fitnessハブへの計測可能CTAだけを追加する。"""
+    for line in insights.get("recommended_ctas", []):
+        text = str(line or "").strip()
+        match = re.search(r"https://musclelove-777\.github\.io/[^\s<]*", text)
+        if not match:
+            continue
+        url = match.group(0)
+        label = text.replace(url, "").strip().rstrip("→").strip() or "MuscleLoveまとめハブ"
+        return (
+            "\n<!-- ML_POOL_CTA -->\n"
+            '<p style="text-align:center; margin:14px 0;">'
+            f'<a href="{html.escape(url, quote=True)}" target="_blank" rel="noopener">'
+            f'{html.escape(label)}</a></p>\n'
+            "<!-- /ML_POOL_CTA -->\n"
+        )
+    return ""
 
 
 # 注意: Amebaはアダルトアフィリ禁止（アカBANリスク）。FANZA/eronavi 等の成人向け導線は
@@ -683,8 +733,20 @@ def build_title(image_name):
     return template.format(category=category)
 
 
-def build_caption(image_name):
+def build_caption(image_name, pool_insights=None):
     """画像名から安全なキャプション候補を選ぶ。"""
+    pool_templates = []
+    for template in (pool_insights or {}).get("recommended_templates", []):
+        candidate = str(template or "").replace("{hashtags}", "").strip()
+        if candidate and "{" not in candidate and "}" not in candidate:
+            try:
+                assert_safe_fitness_preview(candidate)
+            except ValueError:
+                continue
+            pool_templates.append(candidate)
+    if pool_templates:
+        return random.choice(pool_templates)
+
     traits = detect_image_traits(image_name)
     templates = list(CAPTION_TEMPLATES)
     for trait_name, trait_templates in CONDITIONAL_CAPTION_TEMPLATES.items():
@@ -693,12 +755,14 @@ def build_caption(image_name):
     return random.choice(templates)
 
 
-def build_body_html(image_name, image_url, tags, title=None, include_image=True):
+def build_body_html(
+    image_name, image_url, tags, title=None, include_image=True, pool_insights=None
+):
     """ブログ本文のHTMLを生成"""
     category = extract_category(image_name)
     title = title or build_title(image_name)
     hashtags = ' '.join([f'#{t}' for t in select_ameblo_tags(tags, max_tags=15, allow_safe_general=True)])
-    caption = build_caption(image_name)
+    caption = build_caption(image_name, pool_insights=pool_insights)
     template = random.choice(BODY_TEMPLATES)
     image_html = ""
     if include_image and image_url:
@@ -718,8 +782,76 @@ def build_body_html(image_name, image_url, tags, title=None, include_image=True)
         patreon_link=PATREON_LINK,
     )
     # 末尾CTA: X(常時) → 関連サイト（冪等マーカー付き）。Amebaにアダルト導線は載せない。
-    html = html.rstrip() + build_x_cta_block() + build_backlink_block()
-    return html.strip()
+    body = html.rstrip() + build_x_cta_block() + build_pool_cta_block(pool_insights or {})
+    body += build_backlink_block()
+    return body.strip()
+
+
+def _arg_value(name, default=""):
+    try:
+        return sys.argv[sys.argv.index(name) + 1]
+    except (ValueError, IndexError):
+        return default
+
+
+def dry_run_requested():
+    return (
+        "--dry-run" in sys.argv
+        or os.environ.get("AMEBLO_DRY_RUN", "").lower() in {"1", "true", "yes", "on"}
+        or os.environ.get("DRY_RUN", "").lower() in {"1", "true", "yes", "on"}
+    )
+
+
+def print_console_safe(value):
+    """WindowsのCP932端末でもdry-run証跡を途中で落とさない。"""
+    text = str(value)
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(text.encode(encoding, errors="replace").decode(encoding))
+
+
+def run_dry_run():
+    """認証・Drive・Selenium・投稿台帳に触れず、投稿本文だけを検証する。"""
+    sample_name = _arg_value("--sample-name", "training_abs_pose_sample.jpg")
+    insights = load_ameblo_pool()
+    tags = generate_tags(sample_name)
+    tags = enrich_tags_with_trends(
+        [*tags, *insights.get("recommended_tags", [])], max_tags=15
+    )
+    title = build_title(sample_name)
+    body = build_body_html(
+        sample_name,
+        "",
+        tags,
+        title=title,
+        include_image=False,
+        pool_insights=insights,
+    )
+    assert_safe_fitness_preview(sample_name, title, tags, body)
+    preview = {
+        "mode": "dry_run",
+        "platform": "ameblo",
+        "lane": "safe_fitness",
+        "sample_name": sample_name,
+        "pool_version": insights.get("updated_at_jst", "fallback"),
+        "title": title,
+        "tags": tags,
+        "body_html": body,
+        "cta_has_utm": "utm_source=ameblo" in body and "utm_medium=autopost" in body,
+        "live_actions": [],
+    }
+    output = json.dumps(preview, ensure_ascii=False, indent=2)
+    output_path = os.environ.get("AMEBLO_DRY_RUN_OUTPUT", "").strip()
+    if output_path:
+        with open(output_path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(output + "\n")
+        print(f"DRY_RUN preview wrote: {output_path}")
+    else:
+        print_console_safe(output)
+    print("DRY_RUN OK: auth/Drive/Selenium/post/log update skipped")
+    return 0
 
 
 def build_ameblo_hashtags(tags, max_tags=10):
@@ -1090,6 +1222,14 @@ def main():
         print("ローカルで save_cookies.py を実行して、GitHub Secret AMEBLO_COOKIES を更新してください。")
         return AUTH_EXPIRED_EXIT_CODE
 
+    # 投稿内容だけを見る経路は、認証情報・Drive・Seleniumより必ず先に終了する。
+    if dry_run_requested():
+        try:
+            return run_dry_run()
+        except ValueError as exc:
+            print(f"DRY_RUN BLOCKED: {exc}")
+            return 4
+
     # 認証チェック（Cookie方式 + パスワードフォールバック）
     if cookie_auth_required():
         ok, message = check_cookie_freshness()
@@ -1139,7 +1279,8 @@ def main():
     image = random.choice(available)
     print(f"Selected: {image['name']}")
 
-    # タグ生成
+    # タグ生成。中央poolはSafe Fitnessだけを読み、失敗時は既存タグへ戻る。
+    pool_insights = load_ameblo_pool()
     tags = generate_tags(image["name"])
 
     # 関連するトレンドタグだけ追加（汎用人気タグは除外）
@@ -1150,7 +1291,11 @@ def main():
         trend_tags = get_trending_tags(max_tags=8)
     except ImportError:
         print("trending.py not found, skipping trend tags")
-    tags = enrich_tags_with_trends(tags, trend_tags=trend_tags, max_tags=15)
+    tags = enrich_tags_with_trends(
+        [*tags, *pool_insights.get("recommended_tags", [])],
+        trend_tags=trend_tags,
+        max_tags=15,
+    )
 
     # gdownで取得したローカル画像をSelenium経由でアップロードする
     image_url = ""
@@ -1170,10 +1315,18 @@ def main():
         tags,
         title=title,
         include_image=include_inline_image,
+        pool_insights=pool_insights,
     )
+
+    try:
+        assert_safe_fitness_preview(image["name"], title, tags, body_html)
+    except ValueError as exc:
+        print(f"SAFE_FITNESS_BLOCKED: {exc}")
+        return 4
 
     print(f"Title: {title}")
     print(f"Tags: {', '.join(tags[:10])}...")
+    print(f"Content pool: {pool_insights.get('updated_at_jst', 'fallback')}")
     print(f"Inline image in body: {include_inline_image}")
     print()
 
