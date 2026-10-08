@@ -31,16 +31,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Setup Chrome
-        uses: browser-actions/setup-chrome@latest
-        with:
-          chrome-version: stable
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
       - name: Decode Ameblo cookies
-        run: echo "$AMEBLO_COOKIES" | base64 -d > ameblo_cookies.json
+        id: decode_cookies
+        run: |
+          if [ -z "$AMEBLO_COOKIES" ]; then
+            echo "::error::AMEBLO_COOKIES is not configured; posting is blocked."
+            exit 1
+          fi
+          printf '%s' "$AMEBLO_COOKIES" | base64 -d > ameblo_cookies.json
         env:
           AMEBLO_COOKIES: ${{ secrets.AMEBLO_COOKIES }}
 
@@ -48,6 +46,16 @@ jobs:
         id: auth_check
         continue-on-error: true
         run: python upload.py --check-auth-only
+
+      - name: Setup Chrome
+        if: steps.auth_check.outcome == 'success'
+        uses: browser-actions/setup-chrome@latest
+        with:
+          chrome-version: stable
+
+      - name: Install dependencies
+        if: steps.auth_check.outcome == 'success'
+        run: pip install -r requirements.txt
 
       - name: Run upload script (attempt 1)
         id: attempt1
@@ -87,6 +95,7 @@ jobs:
             --disable-dev-shm-usage
 
       - name: Commit upload log
+        id: commit_log
         if: steps.attempt1.outcome == 'success' || steps.attempt2.outcome == 'success' || steps.attempt3.outcome == 'success'
         run: |
           git config user.name "github-actions[bot]"
@@ -97,61 +106,77 @@ jobs:
           git push
 
       - name: LINE notify on failure
+        id: notify_failure
+        continue-on-error: true
         if: steps.auth_check.outcome == 'failure' || (steps.attempt1.outcome == 'failure' && (steps.attempt2.outcome == 'failure' || steps.attempt2.outcome == 'skipped') && (steps.attempt3.outcome == 'failure' || steps.attempt3.outcome == 'skipped'))
         env:
           LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: |
           if [ "${{ steps.auth_check.outcome }}" = "failure" ]; then
-            FAILURE_TEXT="Ameblo Cookie が期限切れです。ローカルで save_cookies.py を実行して AMEBLO_COOKIES を更新してください"
+            python notify_line.py --outcome auth_failed
           else
-            FAILURE_TEXT="Ameblo自動投稿が3回リトライしても失敗しました"
+            python notify_line.py --outcome unconfirmed
           fi
-          curl -s -X POST https://api.line.me/v2/bot/message/push \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${LINE_CHANNEL_TOKEN}" \
-            -d "{
-              \"to\": \"${LINE_USER_ID}\",
-              \"messages\": [{
-                \"type\": \"text\",
-                \"text\": \"${FAILURE_TEXT}\n\n時刻: $(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST')\nリポジトリ: ${{ github.repository }}\nログ: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
-              }]
-            }"
 
       - name: LINE notify on success
+        id: notify_success
+        continue-on-error: true
         if: steps.attempt1.outcome == 'success' || steps.attempt2.outcome == 'success' || steps.attempt3.outcome == 'success'
         env:
           LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: |
-          RETRY_INFO=""
+          ATTEMPT=1
           if [ "${{ steps.attempt2.outcome }}" = "success" ]; then
-            RETRY_INFO="（2回目で成功）"
+            ATTEMPT=2
           elif [ "${{ steps.attempt3.outcome }}" = "success" ]; then
-            RETRY_INFO="（3回目で成功）"
+            ATTEMPT=3
           fi
-          curl -s -X POST https://api.line.me/v2/bot/message/push \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${LINE_CHANNEL_TOKEN}" \
-            -d "{
-              \"to\": \"${LINE_USER_ID}\",
-              \"messages\": [{
-                \"type\": \"text\",
-                \"text\": \"Ameblo自動投稿 成功${RETRY_INFO}\n時刻: $(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST')\"
-              }]
-            }"
+          python notify_line.py --outcome completed --attempt "$ATTEMPT"
 
       # 「緑なのに素通り」防止: 認証失敗(cookie失効)や投稿ゼロのときは
       # ジョブを赤(failure)にして気づけるようにする。
       - name: Mark job failed if nothing was posted
         if: always()
         run: |
+          if [ "${{ steps.auth_check.outcome }}" = "failure" ]; then
+            echo "::error::Ameblo Cookie の期限確認に失敗。投稿処理は開始していません。認証更新が必要です。"
+            exit 1
+          fi
           if [ "${{ steps.auth_check.outcome }}" != "success" ]; then
-            echo "::error::Ameblo cookie の認証に失敗 (失効の可能性)。投稿は行われていません。ローカルで relogin_window.py を実行して AMEBLO_COOKIES を更新してください。"
+            echo "::error::Ameblo の事前確認が未完了です。セットアップまたはCookie展開の失敗を確認してください。"
             exit 1
           fi
           if [ "${{ steps.attempt1.outcome }}" != "success" ] && [ "${{ steps.attempt2.outcome }}" != "success" ] && [ "${{ steps.attempt3.outcome }}" != "success" ]; then
-            echo "::error::Ameblo 投稿が3回とも失敗。投稿は行われていません。"
+            echo "::error::Ameblo 投稿処理の正常完了を確認できません。再実行前に公開結果と台帳を照合してください。"
             exit 1
           fi
           echo "Ameblo post OK (auth_check=${{ steps.auth_check.outcome }})."
+
+      - name: Record publishing and notification outcomes
+        if: always()
+        env:
+          AUTH_OUTCOME: ${{ steps.auth_check.outcome }}
+          ATTEMPT1_OUTCOME: ${{ steps.attempt1.outcome }}
+          ATTEMPT2_OUTCOME: ${{ steps.attempt2.outcome }}
+          ATTEMPT3_OUTCOME: ${{ steps.attempt3.outcome }}
+          FAILURE_NOTIFY_OUTCOME: ${{ steps.notify_failure.outcome }}
+          SUCCESS_NOTIFY_OUTCOME: ${{ steps.notify_success.outcome }}
+          LEDGER_OUTCOME: ${{ steps.commit_log.outcome }}
+        run: |
+          {
+            echo '## Publishing outcome'
+            if [ "$AUTH_OUTCOME" = 'failure' ]; then
+              echo 'HOLD_AUTH - Cookie preflight failed. Upload attempts were not started.'
+            elif [ "$AUTH_OUTCOME" != 'success' ]; then
+              echo 'HOLD_SETUP: Preflight did not complete. Check setup and cookie decoding.'
+            elif [ "$ATTEMPT1_OUTCOME" = 'success' ] || [ "$ATTEMPT2_OUTCOME" = 'success' ] || [ "$ATTEMPT3_OUTCOME" = 'success' ]; then
+              echo 'Upload script completed successfully. Confirm the public entry and ledger before treating delivery as verified.'
+            else
+              echo 'HOLD_RESULT: Upload completion was not confirmed. Reconcile public entries and ledger before retrying.'
+            fi
+            printf '\nLedger save: %s\n' "$LEDGER_OUTCOME"
+            printf '\nLINE failure notification: %s\n' "$FAILURE_NOTIFY_OUTCOME"
+            printf '\nLINE success notification: %s\n' "$SUCCESS_NOTIFY_OUTCOME"
+          } >> "$GITHUB_STEP_SUMMARY"
