@@ -7,6 +7,11 @@ on:
     - cron: '0 9 * * *'   # JST 18:00 (UTC 09:00)
     - cron: '0 13 * * *'  # JST 22:00 (UTC 13:00)
   workflow_dispatch:
+    inputs:
+      check_auth_only:
+        description: Check stored session expiry without starting uploads or notifications
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -48,18 +53,18 @@ jobs:
         run: python upload.py --check-auth-only
 
       - name: Setup Chrome
-        if: steps.auth_check.outcome == 'success'
+        if: steps.auth_check.outcome == 'success' && github.event.inputs.check_auth_only != 'true'
         uses: browser-actions/setup-chrome@latest
         with:
           chrome-version: stable
 
       - name: Install dependencies
-        if: steps.auth_check.outcome == 'success'
+        if: steps.auth_check.outcome == 'success' && github.event.inputs.check_auth_only != 'true'
         run: pip install -r requirements.txt
 
       - name: Run upload script (attempt 1)
         id: attempt1
-        if: steps.auth_check.outcome == 'success'
+        if: steps.auth_check.outcome == 'success' && github.event.inputs.check_auth_only != 'true'
         continue-on-error: true
         run: |
           python upload.py \
@@ -108,7 +113,7 @@ jobs:
       - name: LINE notify on failure
         id: notify_failure
         continue-on-error: true
-        if: steps.auth_check.outcome == 'failure' || (steps.attempt1.outcome == 'failure' && (steps.attempt2.outcome == 'failure' || steps.attempt2.outcome == 'skipped') && (steps.attempt3.outcome == 'failure' || steps.attempt3.outcome == 'skipped'))
+        if: github.event.inputs.check_auth_only != 'true' && (steps.auth_check.outcome == 'failure' || (steps.attempt1.outcome == 'failure' && (steps.attempt2.outcome == 'failure' || steps.attempt2.outcome == 'skipped') && (steps.attempt3.outcome == 'failure' || steps.attempt3.outcome == 'skipped')))
         env:
           LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
@@ -122,7 +127,7 @@ jobs:
       - name: LINE notify on success
         id: notify_success
         continue-on-error: true
-        if: steps.attempt1.outcome == 'success' || steps.attempt2.outcome == 'success' || steps.attempt3.outcome == 'success'
+        if: github.event.inputs.check_auth_only != 'true' && (steps.attempt1.outcome == 'success' || steps.attempt2.outcome == 'success' || steps.attempt3.outcome == 'success')
         env:
           LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
@@ -139,6 +144,8 @@ jobs:
       # ジョブを赤(failure)にして気づけるようにする。
       - name: Mark job failed if nothing was posted
         if: always()
+        env:
+          CHECK_AUTH_ONLY: ${{ github.event.inputs.check_auth_only }}
         run: |
           if [ "${{ steps.auth_check.outcome }}" = "failure" ]; then
             echo "::error::Ameblo Cookie の期限確認に失敗。投稿処理は開始していません。認証更新が必要です。"
@@ -147,6 +154,10 @@ jobs:
           if [ "${{ steps.auth_check.outcome }}" != "success" ]; then
             echo "::error::Ameblo の事前確認が未完了です。セットアップまたはCookie展開の失敗を確認してください。"
             exit 1
+          fi
+          if [ "$CHECK_AUTH_ONLY" = "true" ]; then
+            echo 'AUTH_ONLY_PASS - Cookie preflight passed. No upload was started.'
+            exit 0
           fi
           if [ "${{ steps.attempt1.outcome }}" != "success" ] && [ "${{ steps.attempt2.outcome }}" != "success" ] && [ "${{ steps.attempt3.outcome }}" != "success" ]; then
             echo "::error::Ameblo 投稿処理の正常完了を確認できません。再実行前に公開結果と台帳を照合してください。"
@@ -164,6 +175,7 @@ jobs:
           FAILURE_NOTIFY_OUTCOME: ${{ steps.notify_failure.outcome }}
           SUCCESS_NOTIFY_OUTCOME: ${{ steps.notify_success.outcome }}
           LEDGER_OUTCOME: ${{ steps.commit_log.outcome }}
+          CHECK_AUTH_ONLY: ${{ github.event.inputs.check_auth_only }}
         run: |
           {
             echo '## Publishing outcome'
@@ -171,6 +183,8 @@ jobs:
               echo 'HOLD_AUTH - Cookie preflight failed. Upload attempts were not started.'
             elif [ "$AUTH_OUTCOME" != 'success' ]; then
               echo 'HOLD_SETUP: Preflight did not complete. Check setup and cookie decoding.'
+            elif [ "$CHECK_AUTH_ONLY" = 'true' ]; then
+              echo 'AUTH_ONLY_PASS - Cookie preflight passed. Uploads and notifications were not started.'
             elif [ "$ATTEMPT1_OUTCOME" = 'success' ] || [ "$ATTEMPT2_OUTCOME" = 'success' ] || [ "$ATTEMPT3_OUTCOME" = 'success' ]; then
               echo 'Upload script completed successfully. Confirm the public entry and ledger before treating delivery as verified.'
             else
