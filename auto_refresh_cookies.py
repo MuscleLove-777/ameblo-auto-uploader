@@ -21,7 +21,6 @@ import os
 import subprocess
 import sys
 import time
-import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,10 +40,9 @@ def at_cookie_alive(cookies, min_remaining_hours: int = 12) -> tuple[bool, str]:
                 return False, "AT Cookie に expiry 無し"
             now = datetime.now(timezone.utc).timestamp()
             remaining_h = (exp - now) / 3600
-            exp_str = datetime.fromtimestamp(exp, tz=timezone.utc).isoformat()
             if remaining_h < min_remaining_hours:
-                return False, f"AT exp={exp_str} 残り{remaining_h:.1f}h (閾値{min_remaining_hours}h未満)"
-            return True, f"AT exp={exp_str} 残り{remaining_h:.1f}h"
+                return False, "AT Cookie の有効期間が不足"
+            return True, "AT Cookie 有効"
     return False, "AT Cookie が無い"
 
 SCRIPT_DIR = Path(__file__).parent
@@ -106,7 +104,7 @@ def touch_session(driver) -> bool:
 
     with open(COOKIE_FILE, "r", encoding="utf-8") as f:
         cookies = json.load(f)
-    log(f"既存Cookie {len(cookies)}個をロード")
+    log("既存Cookieをロード")
 
     # Step 1: ドメイン設定のため ameba.jp にアクセス
     driver.get("https://www.ameba.jp/")
@@ -123,7 +121,7 @@ def touch_session(driver) -> bool:
     time.sleep(5)
 
     current = driver.current_url
-    log(f"Touch後URL: {current}")
+    log("管理ページへの遷移を確認")
 
     if "signin" in current or "login" in current.lower() or "auth.user.ameba" in current:
         log("Cookie touch 失敗: signin にリダイレクトされた(Cookie死亡の可能性)")
@@ -151,7 +149,7 @@ def push_to_github_secret(gh_path: str) -> bool:
         raw = f.read()
     b64 = base64.b64encode(raw).decode("ascii")
 
-    log(f"gh secret set 実行: repo={REPO}, name={SECRET_NAME}, size={len(b64)}bytes")
+    log("GitHub Secrets更新を実行")
     result = subprocess.run(
         [gh_path, "secret", "set", SECRET_NAME, "--repo", REPO],
         input=b64,
@@ -161,8 +159,6 @@ def push_to_github_secret(gh_path: str) -> bool:
     )
     if result.returncode != 0:
         log(f"gh secret set 失敗: rc={result.returncode}")
-        log(f"  stdout: {result.stdout[:500]}")
-        log(f"  stderr: {result.stderr[:500]}")
         return False
     log("AMEBLO_COOKIES シークレット更新成功")
     return True
@@ -177,7 +173,7 @@ def main() -> int:
     if not gh_path:
         log("ERROR: gh CLI が見つからない。PATH または既定の場所を確認")
         return 10
-    log(f"gh 検出: {gh_path}")
+    log("gh 検出完了")
 
     if not COOKIE_FILE.exists():
         log("ERROR: ameblo_cookies.json が無い。先に save_cookies.py を実行して")
@@ -192,7 +188,7 @@ def main() -> int:
         with open(COOKIE_FILE, "r", encoding="utf-8") as f:
             pre_cookies = json.load(f)
         alive, msg = at_cookie_alive(pre_cookies)
-        log(f"Pre-touch AT check: {msg}")
+        log("Pre-touch AT check: 有効" if alive else "Pre-touch AT check: 無効")
         if not alive:
             log("=== 失敗: AT Cookieがハード失効 ===")
             log("→ save_cookies.py を実行してブラウザで1回だけ再ログインが必要")
@@ -205,22 +201,22 @@ def main() -> int:
 
         # セッション生存確認できたので、新鮮なCookieを取得して保存
         new_cookies = driver.get_cookies()
-        log(f"Touch後に取得したCookie: {len(new_cookies)}個")
+        log("Touch後のCookie取得完了")
 
         if len(new_cookies) == 0:
-            log("WARNING: Cookie数が0。保存スキップ")
+            log("WARNING: Cookieを取得できず保存スキップ")
             return 21
 
         # touch後も AT が有効期限を更新できたか確認
         alive_after, msg_after = at_cookie_alive(new_cookies)
-        log(f"Post-touch AT check: {msg_after}")
+        log("Post-touch AT check: 有効" if alive_after else "Post-touch AT check: 無効")
         if not alive_after:
             log("WARNING: touch後も AT が更新されなかった。Secrets反映スキップ")
             return 24
 
         with open(COOKIE_FILE, "w", encoding="utf-8") as f:
             json.dump(new_cookies, f, indent=2, ensure_ascii=False)
-        log(f"{COOKIE_FILE.name} を上書き保存")
+        log("Cookieを上書き保存")
 
         if not push_to_github_secret(gh_path):
             log("=== 失敗: GitHub シークレット更新失敗 ===")
@@ -234,8 +230,7 @@ def main() -> int:
         return 0
 
     except Exception as e:
-        log(f"Exception: {e}")
-        log(traceback.format_exc())
+        log(f"Exception: {type(e).__name__}")
         return 30
     finally:
         if driver is not None:
@@ -247,4 +242,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as e:
+        log(f"処理失敗: {type(e).__name__}")
+        sys.exit(1)

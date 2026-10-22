@@ -51,13 +51,13 @@ def find_gh() -> str | None:
 def push_secret(gh_path: str) -> bool:
     with open(COOKIE_FILE, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("ascii")
-    print(f"→ gh secret set {SECRET_NAME} (size={len(b64)}B)")
+    print("→ GitHub Secrets更新を実行")
     r = subprocess.run(
         [gh_path, "secret", "set", SECRET_NAME, "--repo", REPO],
         input=b64, capture_output=True, text=True, timeout=60,
     )
     if r.returncode != 0:
-        print(f"  FAILED rc={r.returncode} stderr={r.stderr[:300]}")
+        print(f"  FAILED rc={r.returncode}")
         return False
     print(f"  OK: Secrets更新完了")
     return True
@@ -70,7 +70,7 @@ def trigger_workflow(gh_path: str) -> bool:
         capture_output=True, text=True, timeout=30,
     )
     if r.returncode != 0:
-        print(f"  FAILED rc={r.returncode} stderr={r.stderr[:300]}")
+        print(f"  FAILED rc={r.returncode}")
         return False
     print(f"  OK: Amebaワークフロー即時実行を発火")
     return True
@@ -84,10 +84,11 @@ def main():
     if not gh_path:
         print("ERROR: gh CLI が見つかりません。インストールしてください")
         return 10
-    print(f"gh検出: {gh_path}")
+    print("gh検出完了")
 
-    driver = create_driver(headless=False)
+    driver = None
     try:
+        driver = create_driver(headless=False)
         driver.get("https://www.ameba.jp/")
         time.sleep(3)
 
@@ -130,19 +131,19 @@ def main():
 
         cookies = driver.get_cookies()
         if len(cookies) == 0:
-            print("ERROR: Cookieが0個。ログイン失敗の可能性")
+            print("ERROR: Cookieを取得できませんでした")
             return 11
 
         with open(COOKIE_FILE, "w", encoding="utf-8") as f:
             json.dump(cookies, f, indent=2, ensure_ascii=False)
-        print(f"\nCookie保存完了! ({len(cookies)}個) -> {COOKIE_FILE.name}")
-        print(f"最終URL: {driver.current_url}")
+        print("\nCookie保存完了")
     except Exception as e:
-        print(f"Error during browser phase: {e}")
+        print(f"Error during browser phase: {type(e).__name__}")
         return 1
     finally:
         try:
-            driver.quit()
+            if driver is not None:
+                driver.quit()
         except Exception:
             pass
 
@@ -165,4 +166,8 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as e:
+        print(f"処理失敗: {type(e).__name__}")
+        sys.exit(1)
