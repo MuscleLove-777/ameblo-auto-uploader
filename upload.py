@@ -4,6 +4,8 @@ Ameba Blog (ameblo.jp) 画像自動投稿（GitHub Actions用）
 公開Driveフォルダからgdownで画像取得 -> ランダム1枚をブログ記事として投稿 -> アップロード済みを記録
 Selenium使用（Ameba公式APIなし）
 """
+from publication_evidence import record_publication_result, identity_from_url
+from promotion_policy import CANONICAL_URL, canonical_cta, strip_plain_promotion, normalize_plain_promotion, normalize_html_promotion
 import sys
 import json
 import html
@@ -641,6 +643,10 @@ CONDITIONAL_CAPTION_TEMPLATES = {
 
 # ===== 公開Driveフォルダ =====
 
+class SourceInventoryUnavailable(RuntimeError):
+    pass
+
+
 def list_gdrive_images(folder_id):
     """gdownで画像一覧を取得"""
     return _list_via_gdown(folder_id)
@@ -662,9 +668,12 @@ def _list_via_gdown(folder_id):
     print(f"  Files already in '{dl_dir}/': {len(before)}")
 
     try:
-        gdown.download_folder(url, output=dl_dir, quiet=False, remaining_ok=True)
-    except Exception as e:
-        print(f"Download error (partial download may exist): {e}")
+        downloaded = gdown.download_folder(url, output=dl_dir, quiet=False, remaining_ok=True)
+    except Exception:
+        # An acquisition failure is not a confirmed empty inventory.
+        raise SourceInventoryUnavailable("source_inventory_unavailable") from None
+    if not isinstance(downloaded, list) or any(not isinstance(path, str) for path in downloaded):
+        raise SourceInventoryUnavailable("source_inventory_unavailable")
 
     # ダウンロード後のファイル数を集計
     after = set()
@@ -784,7 +793,7 @@ def build_body_html(
     # 末尾CTA: X(常時) → 関連サイト（冪等マーカー付き）。Amebaにアダルト導線は載せない。
     body = html.rstrip() + build_x_cta_block() + build_pool_cta_block(pool_insights or {})
     body += build_backlink_block()
-    return body.strip()
+    return normalize_html_promotion(body)
 
 
 def _arg_value(name, default=""):
@@ -1212,6 +1221,19 @@ def save_uploaded_log(log):
 
 # ===== メイン =====
 
+def record_publisher_result(status, reason="", posting_started=False, ledger_saved=False):
+    """Controller-only evidence; never contains source names, content, or sessions."""
+    target = os.environ.get("AMEBLO_RESULT_PATH")
+    if not target:
+        return
+    temporary = target + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as output:
+        json.dump({"status": status, "reason": reason,
+                   "posting_started": posting_started, "ledger_saved": ledger_saved,
+                   "public_verified": False}, output)
+    os.replace(temporary, target)
+
+
 def main():
     if "--check-auth-only" in sys.argv:
         ok, message = check_cookie_freshness()
@@ -1236,6 +1258,7 @@ def main():
         if not ok:
             print(f"Error: {message}")
             print("Actionsではパスワードログインを使わず停止します。Cookieを更新してください。")
+            record_publisher_result("HOLD_AUTH")
             return AUTH_EXPIRED_EXIT_CODE
         print(message)
     elif not os.path.exists(COOKIE_FILE):
@@ -1261,9 +1284,15 @@ def main():
 
     # 公開Driveフォルダから画像一覧取得
     print("公開Driveフォルダから画像一覧を取得中...")
-    images = list_gdrive_images(GDRIVE_FOLDER_ID)
+    try:
+        images = list_gdrive_images(GDRIVE_FOLDER_ID)
+    except SourceInventoryUnavailable:
+        print("Source inventory unavailable. No publication was started.")
+        record_publisher_result("HOLD_SOURCE", "source_inventory_unavailable")
+        return 1
     if not images:
         print("No images found!")
+        record_publisher_result("NO_WORK", "inventory_empty")
         return 0
 
     # 未アップロード画像をフィルタ
@@ -1271,6 +1300,7 @@ def main():
     available = [img for img in images if img["name"] not in uploaded_log]
     if not available:
         print("All images already uploaded!")
+        record_publisher_result("NO_WORK", "inventory_exhausted")
         return 0
 
     print(f"Available: {len(available)} / Total: {len(images)}")
@@ -1322,6 +1352,7 @@ def main():
         assert_safe_fitness_preview(image["name"], title, tags, body_html)
     except ValueError as exc:
         print(f"SAFE_FITNESS_BLOCKED: {exc}")
+        record_publisher_result("HOLD_CONTENT")
         return 4
 
     print(f"Title: {title}")
@@ -1347,6 +1378,7 @@ def main():
         if not login_success:
             if cookie_auth_required():
                 print("ログイン失敗! AMEBLO_COOKIES を更新してください。")
+                record_publisher_result("HOLD_AUTH")
                 return AUTH_EXPIRED_EXIT_CODE
 
             # パスワードログインを試行
@@ -1375,6 +1407,7 @@ def main():
         human_delay(2, 4)
 
         # ブログ記事を投稿（CKEditor APIフロー）
+        record_publisher_result("HOLD_RESULT", posting_started=True)
         if post_blog_entry(driver, title, body_html, image_path, tags):
             print()
             print("=" * 50)
@@ -1382,8 +1415,11 @@ def main():
             print("=" * 50)
 
             # 成功 -> ログ保存
+            record_publication_result("ameblo", {"title": title, "caption": body_html},
+                                      source_locator=driver.current_url, confirmed=True, receipt_status="ui_confirmed")
             uploaded_log.append(image["name"])
             save_uploaded_log(uploaded_log)
+            record_publisher_result("SCRIPT_COMPLETED", posting_started=True, ledger_saved=True)
             print(f"Remaining: {len(available) - 1}")
             return 0
         else:

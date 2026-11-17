@@ -40,3 +40,19 @@ refresh.log
 .rclone_mldrive.conf
 queue_refill.log
 refill_run.log
+.login_profile/
+keepalive.log
+keepalive_run.log
+
+auth_update_encrypted.json
+auth_refresh_status.json
+auth_refresh_run.log
+.auth_refresh_job.lock
+
+# Ephemeral controller receipts; publisher_state.json is intentionally durable.
+publisher_observation.json
+publisher_observation.json.tmp
+publisher_attempt.json
+publisher_attempt.json.tmp
+publisher_state.json.tmp
+ameblo_cookies.json.tmp
