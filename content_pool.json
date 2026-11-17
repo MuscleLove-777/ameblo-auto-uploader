@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-09-18 08:18:59 +0900",
-  "version": "20260918",
+  "generated_at": "2026-11-17 08:05:20 +0900",
+  "version": "20261117",
   "rules": {
     "generic_trend_max": 1,
     "hashlike_ban": true,
@@ -9,7 +9,9 @@
     "blocked_platforms_manual_only": true,
     "blocked_cta_destinations_removed": true,
     "note": "uploaderは自レーンのみ読む。generic_trend_candidatesから使うのは最大1個。",
-    "utm_guide": "発リンクには utm_source=<媒体名>&utm_medium=autopost を必ず付与する。pool_loader.as_insights(lane, platform=媒体名) がCTA内URLへ自動付与する。投稿にはハブor自ブログへの計測可能リンクを最低1本入れる。"
+    "utm_guide": "宣伝先は指定Linktreeのみ。URLに追跡パラメータを付けない。",
+    "promotion_destination": "https://linktr.ee/ILoveMyCats",
+    "promotion_link_only": true
   },
   "ng_words_global": [
     "アツロウ",
@@ -19,17 +21,12 @@
     "アツロー",
     "GOOGLE_API_KEY"
   ],
-  "generic_trend_candidates": [
-    "ソフトバンク",
-    "ラーメン",
-    "ドジャース"
-  ],
+  "generic_trend_candidates": [],
   "lanes": {
     "safe_fitness": {
       "platforms": [
         "instagram",
         "tiktok",
-        "youtube",
         "pinterest",
         "threads",
         "bluesky",
@@ -58,9 +55,7 @@
         "AIアート"
       ],
       "trend_tags": [
-        "AI",
-        "代謝",
-        "ダイエット"
+        "AI"
       ],
       "ng_words": [
         "uncensored",
@@ -119,8 +114,35 @@
             "筋肉のラインまで美しい。努力がそのまま形になってる。{tags}",
             "ただ鍛えてるだけじゃない。この完成度。{tags}",
             "{focus}の説得力がすごい。{tags}",
-            "バキバキ。でも美しい。この両立が最高。{tags}"
-          ]
+            "バキバキ。でも美しい。この両立が最高。{tags}",
+            "見てくれ、この存在感。{tags}",
+            "筋肉女子、やっぱりかっこいい。{tags}",
+            "気づいたらもう一回再生してた。{tags}",
+            "強いって、それだけで魅力になる。{tags}",
+            "こういう雰囲気、好きな人いる？{tags}",
+            "一言でいうなら、圧倒的。{tags}",
+            "きれいだけじゃ物足りない人へ。{tags}",
+            "かっこよさで目が止まる。{tags}",
+            "{sport}の魅力、もっと広まってほしい。{tags}",
+            "この迫力、短い動画でも伝わる。{tags}",
+            "見終わるころには筋トレしたくなる。{tags}",
+            "筋肉の美しさって、好みが分かれるのも面白い。{tags}",
+            "華やかさと力強さ、どっちにも惹かれる。{tags}",
+            "今日は言葉少なめで。見ればわかる。{tags}",
+            "強い女性が好きなら、この空気感。{tags}",
+            "憧れるのは、こういうかっこよさ。{tags}",
+            "派手な説明より、この一瞬。{tags}",
+            "何が刺さったか、一言で教えて。{tags}",
+            "鍛えた体の魅力、つい見入ってしまう。{tags}",
+            "筋肉美を楽しむ時間。{tags}"
+          ],
+          "cta_lines": [
+            "https://linktr.ee/ILoveMyCats"
+          ],
+          "priority_urls": [
+            "https://linktr.ee/ILoveMyCats"
+          ],
+          "affiliate_cards": []
         },
         "threads": {
           "base_tags": [
@@ -142,7 +164,14 @@
             "美しい、で片づけるには強すぎる。{tags}",
             "この仕上がり、何回でも見てしまう。{tags}",
             "筋肉のラインまで美しい。努力がそのまま形になってる。{tags}"
-          ]
+          ],
+          "cta_lines": [
+            "https://linktr.ee/ILoveMyCats"
+          ],
+          "priority_urls": [
+            "https://linktr.ee/ILoveMyCats"
+          ],
+          "affiliate_cards": []
         },
         "bluesky": {
           "base_tags": [
@@ -164,7 +193,14 @@
             "美しい、で片づけるには強すぎる。{tags}",
             "この仕上がり、何回でも見てしまう。{tags}",
             "筋肉のラインまで美しい。努力がそのまま形になってる。{tags}"
-          ]
+          ],
+          "cta_lines": [
+            "https://linktr.ee/ILoveMyCats"
+          ],
+          "priority_urls": [
+            "https://linktr.ee/ILoveMyCats"
+          ],
+          "affiliate_cards": []
         },
         "lemon8": {
           "base_tags": [
@@ -186,15 +222,21 @@
             "美しい、で片づけるには強すぎる。{tags}",
             "この仕上がり、何回でも見てしまう。{tags}",
             "筋肉のラインまで美しい。努力がそのまま形になってる。{tags}"
-          ]
+          ],
+          "cta_lines": [
+            "https://linktr.ee/ILoveMyCats"
+          ],
+          "priority_urls": [
+            "https://linktr.ee/ILoveMyCats"
+          ],
+          "affiliate_cards": []
         }
       },
       "cta_lines": [
-        "まとめハブはこちら → https://musclelove-777.github.io/",
-        "フォローで毎日筋肉美が届く💪"
+        "https://linktr.ee/ILoveMyCats"
       ],
       "priority_urls": [
-        "https://musclelove-777.github.io/"
+        "https://linktr.ee/ILoveMyCats"
       ],
       "affiliate_cards": []
     },
@@ -218,9 +260,7 @@
         "AIイラスト"
       ],
       "trend_tags": [
-        "AI",
-        "代謝",
-        "ダイエット"
+        "AI"
       ],
       "ng_words": [
         "porn",
@@ -241,11 +281,10 @@
         "未公開はもっとすごい。{tags}"
       ],
       "cta_lines": [
-        "未公開・高解像度はPatreonで → https://www.patreon.com/MuscleGirlLove"
+        "https://linktr.ee/ILoveMyCats"
       ],
       "priority_urls": [
-        "https://www.patreon.com/MuscleGirlLove",
-        "https://musclelove-777.github.io/"
+        "https://linktr.ee/ILoveMyCats"
       ],
       "affiliate_cards": []
     },
@@ -266,9 +305,7 @@
         "AI美女"
       ],
       "trend_tags": [
-        "AI",
-        "代謝",
-        "ダイエット"
+        "AI"
       ],
       "ng_words": [],
       "caption_templates": [
@@ -280,22 +317,25 @@
         "このAI×筋肉美、刺さる人には刺さる。{tags}",
         "継続は力なり。今日も積み上げ💪 {tags}",
         "Strong is beautiful💪 {tags}",
-        "全作品まとめはeronaviで。{tags}",
+        "今日の作品、じっくり楽しんで。{tags}",
         "今日の推し筋肉、保存推奨。{tags}"
       ],
       "cta_lines": [
-        "未公開はPatreon → https://www.patreon.com/MuscleGirlLove",
-        "作品ガイド・ランキングはeronaviで検索"
+        "https://linktr.ee/ILoveMyCats"
       ],
       "priority_urls": [
-        "https://www.patreon.com/MuscleGirlLove",
-        "https://musclelove-777.github.io/"
+        "https://linktr.ee/ILoveMyCats"
       ],
       "affiliate_cards": []
     }
   },
   "platform_focus": {
     "ameblo": {
+      "lane": "safe_fitness",
+      "action": "observe_data",
+      "cadence_hint": "verify_measurement_before_reallocation"
+    },
+    "facebook": {
       "lane": "safe_fitness",
       "action": "observe_data",
       "cadence_hint": "verify_measurement_before_reallocation"
@@ -307,11 +347,6 @@
     },
     "deviantart": {
       "lane": "mature_muscle",
-      "action": "observe_data",
-      "cadence_hint": "verify_measurement_before_reallocation"
-    },
-    "facebook": {
-      "lane": "safe_fitness",
       "action": "observe_data",
       "cadence_hint": "verify_measurement_before_reallocation"
     },
@@ -381,126 +416,7 @@
       "cadence_hint": "manual_dry_run_only"
     }
   },
-  "variant_weights": {
-    "tumblr.caption": {
-      "0d115b4f": 1.172,
-      "1e53ae32": 0.846,
-      "b8acef31": 1.321,
-      "18927481": 0.989,
-      "cce7b575": 1.415,
-      "923b3ad1": 0.726,
-      "3dc90978": 1.187,
-      "dd699064": 1.088,
-      "af375567": 1.814,
-      "64362e89": 1.632,
-      "65eb7bd5": 1.339,
-      "d1448a80": 0.435,
-      "a913a15c": 0.495,
-      "d05d35f2": 1.723,
-      "7b284970": 0.544,
-      "8998d2e5": 1.088,
-      "b5a0eef4": 0.816,
-      "a9141b6e": 1.161,
-      "a35b58a8": 0.871,
-      "bbcd758b": 1.187,
-      "4d1016c5": 0.408,
-      "ee41a62e": 0.25,
-      "b2010ce5": 0.435,
-      "3aeac08d": 1.088
-    },
-    "deviantart.title": {
-      "24de42a3": 1.103,
-      "8f3fc275": 1.2,
-      "c53568a4": 0.276,
-      "debd7c78": 0.755,
-      "45dac961": 1.548,
-      "3573b8f1": 0.764,
-      "35c78f47": 0.648,
-      "af35135e": 0.45,
-      "dd9d4530": 1.265,
-      "6415952f": 1.025,
-      "aaef222e": 0.987,
-      "b21f49eb": 1.289,
-      "211c19b9": 2.109,
-      "d8c1492c": 1.119,
-      "30c0f212": 1.016,
-      "4f013b5a": 1.357,
-      "23483c98": 1.6,
-      "6390b548": 2.215,
-      "62516698": 1.265,
-      "8ba95630": 1.863,
-      "c50ea32a": 0.464,
-      "d24b5592": 0.743,
-      "05dbbfa9": 0.778,
-      "ba14c775": 0.74,
-      "c6fb9091": 1.227,
-      "51c7ec92": 1.056,
-      "8d1cea7f": 0.6,
-      "8b652ebf": 0.624,
-      "73e68c7d": 1.146,
-      "f5b2a28d": 0.6,
-      "85fa59e9": 0.406,
-      "5bb88ac6": 0.813,
-      "6329c741": 0.667,
-      "3b06a2dc": 1.146,
-      "a7ba7109": 0.25
-    },
-    "youtube.title": {
-      "e0e12957": 1.025,
-      "4a0cdd28": 1.165,
-      "f6092e4e": 1.004,
-      "b1b5df34": 0.956,
-      "29b2f257": 1.165,
-      "177d303b": 0.807,
-      "2c4804e0": 0.857,
-      "9a6b0229": 0.896,
-      "c4995c17": 1.121,
-      "ed0e5362": 1.004
-    },
-    "youtube.desc": {
-      "a6b65dcd": 0.799,
-      "6fad0332": 1.219,
-      "ce2ac9ae": 0.676,
-      "a1e9fe2e": 1.199,
-      "549568fa": 1.107
-    },
-    "youtube.cta": {
-      "fe6dbc36": 0.865,
-      "532d2222": 0.921,
-      "0b7c18b4": 1.213
-    },
-    "rakuten.title": {
-      "39d014c5": 0.772,
-      "d00860f3": 1.103,
-      "ed29c19d": 0.643,
-      "f26b1b6e": 1.103,
-      "f83f4007": 0.965,
-      "5387d317": 1.544,
-      "de4f6d3f": 0.858,
-      "53d40f29": 0.772,
-      "6535f78c": 1.103,
-      "07c649e5": 1.103,
-      "edd7de36": 0.702,
-      "a9cae8f6": 0.965,
-      "4635d56f": 0.772,
-      "28105c8a": 0.965,
-      "95080833": 0.858,
-      "489bf883": 1.103,
-      "be604b2f": 1.103,
-      "645fae18": 0.858,
-      "412f2855": 1.287,
-      "5938c5f1": 0.772,
-      "47ed4182": 1.103,
-      "0fa76db2": 1.544
-    },
-    "rakuten.body": {
-      "7830c70e": 1.028,
-      "54869f81": 1.028,
-      "874d5b75": 0.992,
-      "be8c956b": 1.107,
-      "05a02d48": 0.846
-    }
-  },
+  "variant_weights": {},
   "channel_weights": {
     "facebook": {
       "weight": 1.0,
@@ -589,9 +505,9 @@
     }
   },
   "revenue_mix": {
-    "status": "RECORDED_ONLY",
-    "has_actual": false,
+    "status": "HOLD",
+    "has_actual": null,
     "share_pct": {},
-    "note": "金額は非公開。記録済み台帳の構成比のみ。全販路の売上確定や増枠許可ではない。"
+    "note": "売上内訳は未確認。注力先や増枠の根拠にしない。金額は非公開。"
   }
 }
